@@ -27,7 +27,7 @@ AEROPORTS_PRESETS = {
 ZONE_ACTIVE = "TLS"
 INTERVALLE_SCAN_SEC = 5
 FICHIER_CSV = "avions.csv"
-PORT = 8000
+PORT = int(os.environ.get("PORT", 8000))
 
 AVIONS_RARES_ICAO = {
     "A337": "AIRBUS BELUGAXL",
@@ -433,5 +433,5 @@ class RadarHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
 threading.Thread(target=boucle_radar, daemon=True).start()
-print(f"🚀 Radar {AEROPORTS_PRESETS[ZONE_ACTIVE]['nom']} actif : http://127.0.0.1:{PORT}")
-ThreadingHTTPServer(("127.0.0.1", PORT), RadarHandler).serve_forever()
+print(f"🚀 Radar {AEROPORTS_PRESETS[ZONE_ACTIVE]['nom']} actif sur le port {PORT}")
+ThreadingHTTPServer(("0.0.0.0", PORT), RadarHandler).serve_forever()
