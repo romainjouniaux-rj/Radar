@@ -24,8 +24,9 @@ AEROPORTS_PRESETS = {
     "SIN": {"nom": "SINGAPOUR CHANGI (SIN)", "lat": 1.3644, "lon": 103.9915, "rayon": 70}
 }
 
-ZONE_ACTIVE = "TLS"
+ZONE_DEFAUT = "TLS"
 INTERVALLE_SCAN_SEC = 5
+DUREE_ACTIVITE_ZONE_SEC = 25
 FICHIER_CSV = "avions.csv"
 PORT = int(os.environ.get("PORT", 8000))
 
@@ -145,14 +146,21 @@ print(f"✅ Base CSV chargée ({len(base_avions)} modèles)")
 cache_photos = {}
 photos_en_cours = set()
 historique_zones = {z: [] for z in AEROPORTS_PRESETS}
-etat_radar = {
-    "statut": "vide",
-    "maj_serveur": "",
-    "zone_id": ZONE_ACTIVE,
-    "zone": AEROPORTS_PRESETS[ZONE_ACTIVE]["nom"],
-    "nb_avions": 0,
-    "historique": []
+derniere_activite_zone = {z: 0.0 for z in AEROPORTS_PRESETS}
+derniere_activite_zone[ZONE_DEFAUT] = time.time()
+
+etats_radars = {
+    z: {
+        "statut": "vide",
+        "maj_serveur": "",
+        "zone_id": z,
+        "zone": cfg["nom"],
+        "nb_avions": 0,
+        "historique": []
+    }
+    for z, cfg in AEROPORTS_PRESETS.items()
 }
+
 verrou = threading.Lock()
 evenement_scan = threading.Event()
 
@@ -245,8 +253,9 @@ def charger_photo_asynchrone(cle, immat, hex_code, modele, compagnie):
         if res:
             cache_photos[cle] = res
             with verrou:
-                if etat_radar.get("vol", {}).get("hex") == hex_code:
-                    etat_radar["photo"] = res
+                for etat in etats_radars.values():
+                    if etat.get("vol", {}).get("hex") == hex_code:
+                        etat["photo"] = res
     finally:
         photos_en_cours.discard(cle)
 
@@ -323,65 +332,73 @@ def interroger_flightradar24(zone_cfg):
         })
     return avions, ms
 
-def boucle_radar():
-    global etat_radar
-    dernier_hex = None
+def actualiser_zone(zone_id):
+    zone_cfg = AEROPORTS_PRESETS[zone_id]
+    heure = datetime.now().strftime("%H:%M:%S")
+    try:
+        candidats, ms = interroger_flightradar24(zone_cfg)
+        if candidats:
+            candidats.sort(key=lambda x: x["distance_km"])
+            c = candidats[0]
+            specs = dict(base_avions.get(c["icao"], {}))
+            nom_complet = f"{specs.get('manufacturer', '')} {specs.get('model', c['icao'])}".strip()
+            photo = obtenir_photo(c["immat"], c["hex"], nom_complet, c["compagnie"])
 
+            vario = c["taux_vertical"]
+            c["phase"] = "EN APPROCHE" if vario < -150 or c["altitude_ft"] < 4500 else ("MONTÉE" if vario > 250 else "PALIER")
+
+            for suiv in candidats[1:4]:
+                sp_s = base_avions.get(suiv["icao"], {})
+                obtenir_photo(suiv["immat"], suiv["hex"], f"{sp_s.get('manufacturer', '')} {sp_s.get('model', suiv['icao'])}".strip(), suiv["compagnie"])
+
+            with verrou:
+                hist_maj = enregistrer_historique(zone_id, c, specs, heure)
+                etats_radars[zone_id] = {
+                    "statut": "actif",
+                    "maj_serveur": heure,
+                    "source_api": "FR24",
+                    "zone_id": zone_id,
+                    "zone": zone_cfg["nom"],
+                    "nb_avions": len(candidats),
+                    "vol": c,
+                    "specs": specs,
+                    "photo": photo,
+                    "historique": hist_maj
+                }
+        else:
+            with verrou:
+                etats_radars[zone_id] = {
+                    "statut": "vide",
+                    "maj_serveur": heure,
+                    "zone_id": zone_id,
+                    "zone": zone_cfg["nom"],
+                    "nb_avions": 0,
+                    "historique": list(historique_zones.get(zone_id, []))
+                }
+    except Exception as e:
+        print(f"❌ [{heure}] Erreur FR24 ({zone_id}) : {type(e).__name__}: {e}")
+
+def boucle_radar():
     while True:
         debut = time.time()
         evenement_scan.clear()
+        maintenant = time.time()
+
         with verrou:
-            zone_id = ZONE_ACTIVE
-        zone_cfg = AEROPORTS_PRESETS[zone_id]
-        heure = datetime.now().strftime("%H:%M:%S")
+            zones_actives = [
+                z for z, ts in derniere_activite_zone.items()
+                if (maintenant - ts) <= DUREE_ACTIVITE_ZONE_SEC
+            ]
+        if not zones_actives:
+            zones_actives = [ZONE_DEFAUT]
 
-        try:
-            candidats, ms = interroger_flightradar24(zone_cfg)
-            if candidats:
-                candidats.sort(key=lambda x: x["distance_km"])
-                c = candidats[0]
-                specs = dict(base_avions.get(c["icao"], {}))
-                nom_complet = f"{specs.get('manufacturer', '')} {specs.get('model', c['icao'])}".strip()
-                photo = obtenir_photo(c["immat"], c["hex"], nom_complet, c["compagnie"])
-
-                vario = c["taux_vertical"]
-                c["phase"] = "EN APPROCHE" if vario < -150 or c["altitude_ft"] < 4500 else ("MONTÉE" if vario > 250 else "PALIER")
-
-                for suiv in candidats[1:4]:
-                    sp_s = base_avions.get(suiv["icao"], {})
-                    obtenir_photo(suiv["immat"], suiv["hex"], f"{sp_s.get('manufacturer', '')} {sp_s.get('model', suiv['icao'])}".strip(), suiv["compagnie"])
-
-                with verrou:
-                    hist_maj = enregistrer_historique(zone_id, c, specs, heure)
-                    etat_radar = {
-                        "statut": "actif",
-                        "maj_serveur": heure,
-                        "source_api": "FR24",
-                        "zone_id": zone_id,
-                        "zone": zone_cfg["nom"],
-                        "nb_avions": len(candidats),
-                        "vol": c,
-                        "specs": specs,
-                        "photo": photo,
-                        "historique": hist_maj
-                    }
-
-                if c["hex"] != dernier_hex:
-                    dernier_hex = c["hex"]
-                    rare_tag = f" ⭐ [{c['badge_rare']}]" if c["badge_rare"] else ""
-                    print(f"✈️  [{heure}] ({zone_id} • {ms}ms • {len(candidats)} avions) {c['indicatif']}{rare_tag} ({c['compagnie'] or c['icao']}) • {c['distance_km']} km")
-            else:
-                with verrou:
-                    etat_radar = {
-                        "statut": "vide",
-                        "maj_serveur": heure,
-                        "zone_id": zone_id,
-                        "zone": zone_cfg["nom"],
-                        "nb_avions": 0,
-                        "historique": list(historique_zones.get(zone_id, []))
-                    }
-        except Exception as e:
-            print(f"❌ [{heure}] Erreur FR24 : {type(e).__name__}: {e}")
+        threads = []
+        for z in zones_actives:
+            t = threading.Thread(target=actualiser_zone, args=(z,), daemon=True)
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join()
 
         ecoule = time.time() - debut
         attente = max(0.5, INTERVALLE_SCAN_SEC - ecoule)
@@ -392,46 +409,52 @@ class RadarHandler(SimpleHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        global ZONE_ACTIVE, etat_radar
         parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
 
         if parsed.path == "/api/zone":
-            params = urllib.parse.parse_qs(parsed.query)
             nouvelle_zone = params.get("id", [""])[0].strip().upper()
             if nouvelle_zone in AEROPORTS_PRESETS:
                 with verrou:
-                    ZONE_ACTIVE = nouvelle_zone
-                    etat_radar = {
-                        "statut": "vide",
-                        "maj_serveur": datetime.now().strftime("%H:%M:%S"),
-                        "zone_id": nouvelle_zone,
-                        "zone": AEROPORTS_PRESETS[nouvelle_zone]["nom"],
-                        "nb_avions": 0,
-                        "historique": list(historique_zones.get(nouvelle_zone, []))
-                    }
+                    etats_radars[nouvelle_zone]["maj_serveur"] = datetime.now().strftime("%H:%M:%S")
+                    etats_radars[nouvelle_zone]["historique"] = list(historique_zones.get(nouvelle_zone, []))
+                    derniere_activite_zone[nouvelle_zone] = time.time()
                 evenement_scan.set()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"ok": True, "zone_id": ZONE_ACTIVE}).encode("utf-8"))
+            self.wfile.write(json.dumps({"ok": True, "zone_id": nouvelle_zone}).encode("utf-8"))
 
         elif parsed.path == "/api/trafic":
+            zone_req = params.get("zone", [ZONE_DEFAUT])[0].strip().upper()
+            if zone_req not in AEROPORTS_PRESETS:
+                zone_req = ZONE_DEFAUT
+
+            declencher = False
+            with verrou:
+                derniere_activite_zone[zone_req] = time.time()
+                etat = etats_radars[zone_req]
+                if not etat.get("maj_serveur"):
+                    declencher = True
+                if etat.get("statut") == "actif":
+                    v = etat["vol"]
+                    s = etat.get("specs", {})
+                    photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
+                    if photo:
+                        etat["photo"] = photo
+                payload = json.dumps(etat).encode("utf-8")
+
+            if declencher:
+                evenement_scan.set()
+
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            with verrou:
-                if etat_radar.get("statut") == "actif":
-                    v = etat_radar["vol"]
-                    s = etat_radar.get("specs", {})
-                    photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
-                    if photo:
-                        etat_radar["photo"] = photo
-                payload = json.dumps(etat_radar).encode("utf-8")
             self.wfile.write(payload)
         else:
             super().do_GET()
 
 threading.Thread(target=boucle_radar, daemon=True).start()
-print(f"🚀 Radar {AEROPORTS_PRESETS[ZONE_ACTIVE]['nom']} actif sur le port {PORT}")
+print(f"🚀 Radar multi-zones actif sur le port {PORT}")
 ThreadingHTTPServer(("0.0.0.0", PORT), RadarHandler).serve_forever()
