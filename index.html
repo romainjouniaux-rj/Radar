@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radar Approche — Temps Réel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-dark: #070b14;
+      --panel-bg: rgba(9, 14, 26, 0.78);
+      --panel-border: rgba(148, 163, 184, 0.22);
+      --accent: #38bdf8;
+      --gold: #f59e0b;
+      --live: #10b981;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .backdrop-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-size: cover;
+      background-position: 62% 40%;
+      transition: opacity 0.45s ease-in-out;
+      filter: brightness(0.86) contrast(1.05) saturate(1.08);
+      opacity: 0;
+    }
+    .backdrop-layer.visible { opacity: 1; }
+
+    .backdrop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background:
+        radial-gradient(circle at 20% 85%, rgba(7, 11, 20, 0.92) 0%, rgba(7, 11, 20, 0.52) 45%, rgba(7, 11, 20, 0.10) 85%),
+        linear-gradient(to top, rgba(7, 11, 20, 0.85) 0%, rgba(7, 11, 20, 0.05) 55%);
+    }
+
+    .main-stage {
+      position: relative;
+      z-index: 2;
+      height: 100vh;
+      padding: 1.6rem 2.2rem 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* --- BARRE SUPÉRIEURE & MODE ÉCRAN DE VEILLE --- */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    body.idle-mode .top-bar {
+      opacity: 0;
+      transform: translateY(-14px);
+      pointer-events: none;
+    }
+
+    body.idle-mode {
+      cursor: none;
+    }
+
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    /* --- MENU DÉROULANT AÉROPORT SUR MESURE --- */
+    .airport-dropdown {
+      position: relative;
+      z-index: 30;
+    }
+
+    .airport-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(11, 18, 34, 0.86);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      backdrop-filter: blur(16px);
+      color: var(--text-main);
+      padding: 0.36rem 0.85rem 0.36rem 0.45rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .airport-trigger:hover,
+    .airport-dropdown.open .airport-trigger {
+      border-color: var(--accent);
+      background: rgba(15, 23, 42, 0.95);
+      box-shadow: 0 0 22px rgba(56, 189, 248, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .trigger-iata {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #070b14;
+      background: linear-gradient(135deg, #38bdf8, #7dd3fc);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+    }
+
+    .trigger-name {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+
+    .trigger-chevron {
+      width: 15px;
+      height: 15px;
+      color: var(--accent);
+      transition: transform 0.22s ease;
+    }
+
+    .airport-dropdown.open .trigger-chevron {
+      transform: rotate(180deg);
+    }
+
+    .airport-menu {
+      position: absolute;
+      top: calc(100% + 0.55rem);
+      left: 0;
+      min-width: 305px;
+      background: rgba(9, 14, 26, 0.94);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 0.45rem;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px) scale(0.98);
+      transform-origin: top left;
+      transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+    }
+
+    .airport-dropdown.open .airport-menu {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    .menu-header {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding: 0.35rem 0.65rem 0.45rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      margin-bottom: 0.3rem;
+    }
+
+    .airport-option {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 0.55rem 0.65rem;
+      color: var(--text-main);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+
+    .airport-option:hover {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.25);
+    }
+
+    .airport-option.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+
+    .opt-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .opt-iata {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.22rem 0.48rem;
+      border-radius: 6px;
+      min-width: 44px;
+      text-align: center;
+    }
+
+    .airport-option.active .opt-iata {
+      background: var(--accent);
+      color: #070b14;
+      border-color: var(--accent);
+    }
+
+    .opt-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .opt-city {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+
+    .opt-sub {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+    }
+
+    .opt-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: transparent;
+      flex-shrink: 0;
+    }
+
+    .airport-option.active .opt-dot {
+      background: var(--live);
+      box-shadow: 0 0 8px var(--live);
+    }
+
+    .airport-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(12px);
+      padding: 0.42rem 0.9rem;
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #e2e8f0;
+    }
+
+    .live-clock {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.16);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 0.4rem 0.85rem;
+      border-radius: 999px;
+    }
+
+    .traffic-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(12px);
+      padding: 0.42rem 0.9rem;
+      border-radius: 999px;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      box-shadow: 0 0 10px var(--live);
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.45); opacity: 0.45; }
+    }
+
+    /* --- ZONE INFÉRIEURE : HUD GAUCHE + FRISE HISTORIQUE DROITE --- */
+    .bottom-dock {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .bottom-left-hud {
+      max-width: 720px;
+      width: 100%;
+      flex-shrink: 1;
+    }
+
+    .rare-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.28), rgba(217, 119, 6, 0.16));
+      border: 1px solid rgba(251, 191, 36, 0.7);
+      color: #fde68a;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 0.3rem 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 0.45rem;
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.25);
+    }
+
+    .rare-banner:empty {
+      display: none;
+    }
+
+    .bottom-left-hud.is-rare .metric-card {
+      border-color: rgba(251, 191, 36, 0.45);
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.12);
+    }
+
+    .airline-badge {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.25rem;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+    }
+
+    .callsign-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.84rem;
+      background: rgba(56, 189, 248, 0.22);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      color: #e0f2fe;
+      padding: 0.16rem 0.58rem;
+      border-radius: 6px;
+    }
+
+    .phase-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      background: rgba(16, 185, 129, 0.22);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      color: #6ee7b7;
+      padding: 0.16rem 0.55rem;
+      border-radius: 6px;
+    }
+
+    .aircraft-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2rem, 3.6vw, 3.1rem);
+      font-weight: 700;
+      line-height: 1.06;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.65rem;
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.85);
+    }
+
+    .route-banner {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      backdrop-filter: blur(12px);
+      padding: 0.48rem 0.9rem;
+      border-radius: 10px;
+      margin-bottom: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .route-banner:empty {
+      display: none;
+    }
+
+    .route-airport {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .route-tag {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+    }
+
+    .route-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .route-arrow {
+      font-size: 1.1rem;
+      color: var(--accent);
+      padding: 0 0.25rem;
+    }
+
+    .aircraft-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .meta-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      background: rgba(9, 14, 26, 0.84);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(10px);
+      padding: 0.28rem 0.65rem;
+      border-radius: 7px;
+      color: #e2e8f0;
+    }
+
+    .dynamic-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .dynamic-cards-grid.cols-2 { grid-template-columns: repeat(2, 1fr); max-width: 500px; }
+    .dynamic-cards-grid.cols-3 { grid-template-columns: repeat(3, 1fr); max-width: 680px; }
+    .dynamic-cards-grid.cols-4 { grid-template-columns: repeat(4, 1fr); max-width: 720px; }
+
+    .metric-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(14px);
+      border-radius: 12px;
+      padding: 0.68rem 0.85rem;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .metric-label {
+      font-size: 0.66rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.2rem;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.06rem;
+      font-weight: 700;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+
+    .metric-unit {
+      font-size: 0.72rem;
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-left: 0.16rem;
+    }
+
+    .photo-credit {
+      display: inline-block;
+      font-size: 0.72rem;
+      color: #cbd5e1;
+      background: rgba(7, 11, 20, 0.75);
+      padding: 0.26rem 0.72rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      margin-top: 0.35rem;
+    }
+    .photo-credit:empty { display: none; }
+
+    /* --- FRISE HORIZONTALE DES 5 DERNIERS AVIONS (BAS À DROITE) --- */
+    .recent-strip-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
+      flex-shrink: 0;
+      opacity: 0.82;
+      transition: opacity 0.25s ease;
+    }
+
+    .recent-strip-wrapper:hover {
+      opacity: 1;
+    }
+
+    .recent-strip-wrapper:empty {
+      display: none;
+    }
+
+    .recent-strip-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(148, 163, 184, 0.85);
+      padding-right: 0.2rem;
+    }
+
+    .recent-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .recent-item {
+      background: rgba(9, 14, 26, 0.68);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      backdrop-filter: blur(10px);
+      border-radius: 9px;
+      padding: 0.38rem 0.62rem;
+      min-width: 96px;
+      max-width: 118px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.12rem;
+    }
+
+    .recent-item.is-rare {
+      border-color: rgba(251, 191, 36, 0.45);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .recent-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.35rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+
+    .recent-item.is-rare .recent-top {
+      color: #fde68a;
+    }
+
+    .recent-time {
+      font-size: 0.6rem;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    .recent-model {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 1180px) {
+      .recent-strip-wrapper { display: none; }
+    }
+
+    @media (max-width: 640px) {
+      .dynamic-cards-grid.cols-2,
+      .dynamic-cards-grid.cols-3,
+      .dynamic-cards-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="backdrop-layer" id="bg-a"></div>
+  <div class="backdrop-layer" id="bg-b"></div>
+  <div class="backdrop-overlay"></div>
+
+  <main class="main-stage">
+    <header class="top-bar">
+      <div class="top-left">
+        <div class="airport-dropdown" id="airport-dropdown">
+          <button type="button" class="airport-trigger" id="airport-trigger" aria-expanded="false">
+            <span class="trigger-iata" id="trigger-iata">TLS</span>
+            <span class="trigger-name" id="trigger-name">Toulouse-Blagnac</span>
+            <svg class="trigger-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <div class="airport-menu" id="airport-menu" role="listbox">
+            <div class="menu-header">Sélectionner une zone radar</div>
+            <button type="button" class="airport-option active" data-id="TLS" data-city="Toulouse-Blagnac">
+              <div class="opt-left">
+                <span class="opt-iata">TLS</span>
+                <div class="opt-info">
+                  <span class="opt-city">Toulouse-Blagnac</span>
+                  <span class="opt-sub">France • Pistes 14/32 & Usines Airbus</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="DXB" data-city="Dubaï International">
+              <div class="opt-left">
+                <span class="opt-iata">DXB</span>
+                <div class="opt-info">
+                  <span class="opt-city">Dubaï International</span>
+                  <span class="opt-sub">Émirats • Approche Terre 30L/30R</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="CDG" data-city="Paris-Charles de Gaulle">
+              <div class="opt-left">
+                <span class="opt-iata">CDG</span>
+                <div class="opt-info">
+                  <span class="opt-city">Paris-Charles de Gaulle</span>
+                  <span class="opt-sub">France • Hub International Roissy</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="LHR" data-city="Londres-Heathrow">
+              <div class="opt-left">
+                <span class="opt-iata">LHR</span>
+                <div class="opt-info">
+                  <span class="opt-city">Londres-Heathrow</span>
+                  <span class="opt-sub">Royaume-Uni • Pistes 09/27</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="JFK" data-city="New York-JFK">
+              <div class="opt-left">
+                <span class="opt-iata">JFK</span>
+                <div class="opt-info">
+                  <span class="opt-city">New York-JFK</span>
+                  <span class="opt-sub">États-Unis • Queens, NY</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="SIN" data-city="Singapour-Changi">
+              <div class="opt-left">
+                <span class="opt-iata">SIN</span>
+                <div class="opt-info">
+                  <span class="opt-city">Singapour-Changi</span>
+                  <span class="opt-sub">Singapour • Hub Asie-Pacifique</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="airport-tag">
+          <span class="pulse-dot"></span>
+          <span id="status-label">SCAN EN COURS...</span>
+        </div>
+        <div class="live-clock" id="live-clock">--:--:--</div>
+      </div>
+      <div class="traffic-pill" id="traffic-count">0 avion en zone</div>
+    </header>
+
+    <div class="bottom-dock">
+      <section class="bottom-left-hud" id="hud-container">
+        <div class="rare-banner" id="rare-banner"></div>
+
+        <div class="airline-badge">
+          <span id="airline-name">RECHERCHE RADAR...</span>
+          <span class="callsign-pill" id="callsign">---</span>
+          <span class="phase-pill" id="flight-phase">SCAN</span>
+        </div>
+
+        <h1 class="aircraft-title" id="aircraft-model">En attente d'un appareil</h1>
+
+        <div class="route-banner" id="route-banner"></div>
+
+        <div class="aircraft-meta" id="specs-chips">
+          <span class="meta-chip">OACI : —</span>
+          <span class="meta-chip">IMMAT : —</span>
+        </div>
+
+        <div class="dynamic-cards-grid cols-2" id="cards-grid">
+          <div class="metric-card">
+            <div class="metric-label">Distance axe</div>
+            <div class="metric-value">—<span class="metric-unit">km</span></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Altitude</div>
+            <div class="metric-value">—<span class="metric-unit">ft</span></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Vitesse sol</div>
+            <div class="metric-value">—<span class="metric-unit">kts</span></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Cap / Vario</div>
+            <div class="metric-value">—<span class="metric-unit">°</span></div>
+          </div>
+        </div>
+
+        <div class="photo-credit" id="photo-credit"></div>
+      </section>
+
+      <aside class="recent-strip-wrapper" id="recent-strip-wrapper"></aside>
+    </div>
+  </main>
+
+  <script>
+    let derniereUrlPhoto = "";
+    let coucheActive = "a";
+    let derniereSignature = "";
+    let derniereSigHistorique = "";
+    let zoneCourante = "TLS";
+    let timerInactivite = null;
+
+    setInterval(() => {
+      document.getElementById("live-clock").textContent = new Date().toLocaleTimeString("fr-FR");
+    }, 1000);
+
+    // --- MODE ÉCRAN DE VEILLE / KIOSQUE AUTOMATIQUE ---
+    const dropdown = document.getElementById("airport-dropdown");
+    const trigger = document.getElementById("airport-trigger");
+    const options = document.querySelectorAll(".airport-option");
+
+    function reinitialiserInactivite() {
+      document.body.classList.remove("idle-mode");
+      clearTimeout(timerInactivite);
+      timerInactivite = setTimeout(() => {
+        if (!dropdown.classList.contains("open")) {
+          document.body.classList.add("idle-mode");
+        }
+      }, 8000);
+    }
+
+    ["mousemove", "mousedown", "keydown", "touchstart"].forEach(evt => {
+      document.addEventListener(evt, reinitialiserInactivite, { passive: true });
+    });
+    reinitialiserInactivite();
+
+    // --- GESTION DU MENU DÉROULANT PERSONNALISÉ ---
+    function synchroniserDropdown(id) {
+      zoneCourante = id;
+      options.forEach(opt => {
+        const actif = opt.dataset.id === id;
+        opt.classList.toggle("active", actif);
+        if (actif) {
+          document.getElementById("trigger-iata").textContent = id;
+          document.getElementById("trigger-name").textContent = opt.dataset.city;
+        }
+      });
+    }
+
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ouvert = dropdown.classList.toggle("open");
+      trigger.setAttribute("aria-expanded", ouvert);
+      reinitialiserInactivite();
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!dropdown.contains(e.target)) {
+        dropdown.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        dropdown.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    options.forEach(opt => {
+      opt.addEventListener("click", async () => {
+        const id = opt.dataset.id;
+        dropdown.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+        if (id === zoneCourante) return;
+
+        synchroniserDropdown(id);
+        derniereSignature = "";
+        derniereSigHistorique = "";
+        document.getElementById("status-label").textContent = "CHANGEMENT DE ZONE...";
+        try {
+          await fetch(`/api/zone?id=${encodeURIComponent(id)}`);
+          setTimeout(actualiser, 600);
+        } catch (err) {}
+      });
+    });
+
+    function formaterNombre(n) {
+      if (n === null || n === undefined || n === "" || n === "N/A" || n === "0") return null;
+      const num = Number(n);
+      return Number.isNaN(num) ? String(n) : Math.round(num).toLocaleString("fr-FR");
+    }
+
+    function extraireSpec(s, keys) {
+      for (const k of keys) {
+        if (s[k] && s[k] !== "0" && s[k] !== "N/A") return s[k];
+      }
+      return null;
+    }
+
+    function changerPhoto(nouvelleUrl) {
+      if (nouvelleUrl === derniereUrlPhoto) return;
+      derniereUrlPhoto = nouvelleUrl;
+      const bgA = document.getElementById("bg-a");
+      const bgB = document.getElementById("bg-b");
+      if (!nouvelleUrl) {
+        bgA.classList.remove("visible");
+        bgB.classList.remove("visible");
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        if (coucheActive === "a") {
+          bgB.style.backgroundImage = `url("${nouvelleUrl}")`;
+          bgB.classList.add("visible");
+          bgA.classList.remove("visible");
+          coucheActive = "b";
+        } else {
+          bgA.style.backgroundImage = `url("${nouvelleUrl}")`;
+          bgA.classList.add("visible");
+          bgB.classList.remove("visible");
+          coucheActive = "a";
+        }
+      };
+      img.src = nouvelleUrl;
+    }
+
+    function construireGrilleEquilibree(v, s) {
+      const vs = Math.round(Number(v.taux_vertical || 0));
+      const vsTxt = vs !== 0 ? ` (${vs > 0 ? "+" + vs : vs})` : "";
+
+      const cartes = [
+        { label: "Distance axe", html: `${Number(v.distance_km).toFixed(2)}<span class="metric-unit">km</span>` },
+        { label: "Altitude", html: `${formaterNombre(v.altitude_ft) || "0"}<span class="metric-unit">ft</span>` },
+        { label: "Vitesse sol", html: `${formaterNombre(v.vitesse_kts) || "0"}<span class="metric-unit">kts</span>` },
+        { label: "Cap / Vario", html: `${Math.round(v.cap)}°<span class="metric-unit">${vsTxt}</span>` }
+      ];
+
+      const extras = [];
+
+      const pax = formaterNombre(extraireSpec(s, ["max_passengers", "passengers", "pax"]));
+      if (pax) extras.push({ label: "Capacité", html: `${pax}<span class="metric-unit">pax</span>` });
+
+      const range = formaterNombre(extraireSpec(s, ["range_km", "range"]));
+      if (range) extras.push({ label: "Autonomie", html: `${range}<span class="metric-unit">km</span>` });
+
+      const env = formaterNombre(extraireSpec(s, ["wingspan_m", "wingspan"]));
+      const lon = formaterNombre(extraireSpec(s, ["length_m", "length"]));
+      if (env && lon) {
+        extras.push({ label: "Envergure / Long.", html: `${env}<span class="metric-unit">m</span> × ${lon}<span class="metric-unit">m</span>` });
+      } else if (env) {
+        extras.push({ label: "Envergure", html: `${env}<span class="metric-unit">m</span>` });
+      } else if (lon) {
+        extras.push({ label: "Longueur", html: `${lon}<span class="metric-unit">m</span>` });
+      }
+
+      const cruise = formaterNombre(extraireSpec(s, ["cruise_speed_kmh", "cruise_speed_kts", "cruise_speed"]));
+      if (cruise) {
+        const unit = s.cruise_speed_kts ? "kts" : "km/h";
+        extras.push({ label: "Croisière", html: `${cruise}<span class="metric-unit">${unit}</span>` });
+      }
+
+      const ceiling = formaterNombre(extraireSpec(s, ["ceiling_ft", "max_altitude_ft", "ceiling"]));
+      if (ceiling) extras.push({ label: "Plafond max", html: `${ceiling}<span class="metric-unit">ft</span>` });
+
+      if (v.squawk && v.squawk !== "0000") {
+        extras.push({ label: "Squawk", html: `${v.squawk}` });
+      }
+
+      const nbExtrasRetenus = extras.length >= 4 ? 4 : (extras.length >= 2 ? 2 : 0);
+      const toutesCartes = cartes.concat(extras.slice(0, nbExtrasRetenus));
+
+      const grid = document.getElementById("cards-grid");
+      grid.className = "dynamic-cards-grid " + (
+        toutesCartes.length === 8 ? "cols-4" :
+        toutesCartes.length === 6 ? "cols-3" : "cols-2"
+      );
+
+      grid.innerHTML = toutesCartes.map(c => `
+        <div class="metric-card">
+          <div class="metric-label">${c.label}</div>
+          <div class="metric-value">${c.html}</div>
+        </div>
+      `).join("");
+    }
+
+    function afficherFriseRecente(historique, hexActuel) {
+      const wrapper = document.getElementById("recent-strip-wrapper");
+      const precedents = (historique || []).filter(item => item.hex !== hexActuel).slice(0, 5);
+      const sig = precedents.map(p => `${p.hex}_${p.heure}`).join("|");
+
+      if (sig === derniereSigHistorique) return;
+      derniereSigHistorique = sig;
+
+      if (!precedents.length) {
+        wrapper.innerHTML = "";
+        return;
+      }
+
+      wrapper.innerHTML = `
+        <div class="recent-strip-label">Passages récents</div>
+        <div class="recent-strip">
+          ${precedents.map(p => `
+            <div class="recent-item ${p.rare ? "is-rare" : ""}" title="${p.compagnie ? p.compagnie + " • " : ""}${p.modele}">
+              <div class="recent-top">
+                <span>${p.indicatif}</span>
+                <span class="recent-time">${p.heure}</span>
+              </div>
+              <div class="recent-model">${p.modele}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function afficherDonnees(data) {
+      if (data.zone_id && data.zone_id !== zoneCourante) {
+        synchroniserDropdown(data.zone_id);
+      }
+
+      const nb = data.nb_avions || 0;
+      document.getElementById("traffic-count").textContent = `${nb} avion${nb > 1 ? "s" : ""} en zone`;
+
+      const hexActuel = data.vol ? data.vol.hex : "";
+      afficherFriseRecente(data.historique, hexActuel);
+
+      if (data.statut !== "actif" || !data.vol) {
+        document.getElementById("status-label").textContent = `SCAN EN COURS • ${data.maj_serveur || ""}`;
+        return;
+      }
+
+      const v = data.vol;
+      const s = data.specs || {};
+      const photo = data.photo;
+
+      document.getElementById("status-label").textContent = `${data.source_api || "LIVE"} • ${data.maj_serveur || ""}`;
+      construireGrilleEquilibree(v, s);
+
+      const origCode = v.origine ? v.origine.code : "";
+      const destCode = v.destination ? v.destination.code : "";
+      const sig = `${v.hex}_${v.icao}_${v.immat}_${origCode}_${destCode}_${v.badge_rare || ""}`;
+
+      if (sig !== derniereSignature) {
+        derniereSignature = sig;
+
+        const hud = document.getElementById("hud-container");
+        const rareBanner = document.getElementById("rare-banner");
+        if (v.badge_rare) {
+          hud.classList.add("is-rare");
+          rareBanner.textContent = `⭐ APPAREIL REMARQUABLE • ${v.badge_rare}`;
+        } else {
+          hud.classList.remove("is-rare");
+          rareBanner.textContent = "";
+        }
+
+        document.getElementById("airline-name").textContent = v.compagnie || "Aviation Générale";
+        document.getElementById("callsign").textContent = v.num_vol && v.num_vol !== v.indicatif
+          ? `${v.num_vol} (${v.indicatif})`
+          : v.indicatif;
+        document.getElementById("flight-phase").textContent = v.phase;
+        document.getElementById("aircraft-model").textContent = `${s.manufacturer || ""} ${s.model || v.icao}`.trim();
+
+        const routeBanner = document.getElementById("route-banner");
+        if (v.origine || v.destination) {
+          const origNom = v.origine ? v.origine.nom : "Départ inconnu";
+          const destNom = v.destination ? v.destination.nom : "Destination inconnue";
+          routeBanner.innerHTML = `
+            <div class="route-airport">
+              <span class="route-tag">Départ</span>
+              <span class="route-name">${origNom}</span>
+            </div>
+            <span class="route-arrow">✈</span>
+            <div class="route-airport">
+              <span class="route-tag">Arrivée</span>
+              <span class="route-name">${destNom}</span>
+            </div>
+          `;
+        } else {
+          routeBanner.innerHTML = "";
+        }
+
+        document.getElementById("specs-chips").innerHTML = `
+          <span class="meta-chip">OACI : ${v.icao}</span>
+          <span class="meta-chip">IMMAT : ${v.immat}</span>
+        `;
+      }
+
+      const credit = document.getElementById("photo-credit");
+      if (photo && photo.url) {
+        changerPhoto(photo.url);
+        credit.textContent = `📷 ${photo.auteur}`;
+      } else {
+        changerPhoto("");
+        credit.textContent = "";
+      }
+    }
+
+    async function actualiser() {
+      try {
+        const r = await fetch("/api/trafic?t=" + Date.now(), { cache: "no-store" });
+        if (r.ok) afficherDonnees(await r.json());
+      } catch (e) {}
+    }
+
+    actualiser();
+    setInterval(actualiser, 5000);
+  </script>
+</body>
+</html>
