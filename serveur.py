@@ -188,6 +188,8 @@ print(f"✅ Base CSV chargée ({len(base_avions)} modèles)")
 
 cache_photos = {}
 photos_en_cours = set()
+cache_details_vol = {}
+details_en_cours = set()
 historique_zones = {z: [] for z in AEROPORTS_PRESETS}
 derniere_activite_zone = {z: 0.0 for z in AEROPORTS_PRESETS}
 derniere_activite_zone[ZONE_DEFAUT] = time.time()
@@ -265,6 +267,58 @@ def enregistrer_historique(zone_id, vol, specs, heure):
     hist.insert(0, entree)
     del hist[6:]
     return list(hist)
+
+def charger_details_vol_asynchrone(fr24_id):
+    try:
+        url = f"https://data-live.flightradar24.com/clickhandler/?version=1.5&flight={fr24_id}"
+        r = requests.get(url, headers=HEADERS, timeout=3.5, verify=False)
+        if r.status_code == 200:
+            data = r.json()
+            ac = data.get("aircraft") or {}
+            age_txt = str(ac.get("age") or "").strip()
+            if not age_txt and ac.get("deliveryDate"):
+                try:
+                    annee = int(str(ac["deliveryDate"])[:4])
+                    ans = max(0, datetime.now().year - annee)
+                    age_txt = f"{ans} an{'s' if ans > 1 else ''}"
+                except Exception:
+                    pass
+
+            times = data.get("time") or {}
+            est = times.get("estimated") or {}
+            sched = times.get("scheduled") or {}
+            eta_ts = est.get("arrival") or sched.get("arrival")
+
+            infos = {
+                "age": age_txt,
+                "eta_ts": int(eta_ts) if eta_ts else None,
+                "ts_maj": time.time()
+            }
+            cache_details_vol[fr24_id] = infos
+            with verrou:
+                for etat in etats_radars.values():
+                    if etat.get("vol", {}).get("fr24_id") == fr24_id:
+                        etat["vol"]["age"] = infos["age"]
+                        etat["vol"]["eta_ts"] = infos["eta_ts"]
+                    for item in etat.get("liste_avions", []):
+                        if item.get("vol", {}).get("fr24_id") == fr24_id:
+                            item["vol"]["age"] = infos["age"]
+                            item["vol"]["eta_ts"] = infos["eta_ts"]
+    except Exception:
+        pass
+    finally:
+        details_en_cours.discard(fr24_id)
+
+def obtenir_details_vol(fr24_id):
+    if not fr24_id:
+        return {}
+    cached = cache_details_vol.get(fr24_id)
+    if cached and (time.time() - cached.get("ts_maj", 0)) < 120:
+        return cached
+    if fr24_id not in details_en_cours and len(details_en_cours) < 6:
+        details_en_cours.add(fr24_id)
+        threading.Thread(target=charger_details_vol_asynchrone, args=(fr24_id,), daemon=True).start()
+    return cached or {}
 
 def charger_photo_asynchrone(cle, immat, hex_code, modele, compagnie):
     try:
@@ -358,6 +412,7 @@ def interroger_flightradar24(zone_cfg):
         if dist > rayon:
             continue
 
+        fr24_id = str(k).strip()
         hex_code = str(v[0] or "").strip().lower()
         cap = int(v[3] or 0)
         spd = int(v[5] or 0)
@@ -379,8 +434,10 @@ def interroger_flightradar24(zone_cfg):
             lat_ac,
             lon_ac
         )
+        details = cache_details_vol.get(fr24_id, {})
 
         avions.append({
+            "fr24_id": fr24_id,
             "hex": hex_code,
             "indicatif": indicatif,
             "num_vol": num_vol,
@@ -393,6 +450,8 @@ def interroger_flightradar24(zone_cfg):
             "origine": origine,
             "destination": destination,
             "progression": progression,
+            "age": details.get("age", ""),
+            "eta_ts": details.get("eta_ts"),
             "lat": lat_ac,
             "lon": lon_ac,
             "altitude_ft": alt,
@@ -415,6 +474,12 @@ def actualiser_zone(zone_id):
                 sp = dict(base_avions.get(av["icao"], {}))
                 nom_complet = f"{sp.get('manufacturer', '')} {sp.get('model', av['icao'])}".strip()
                 ph = obtenir_photo(av["immat"], av["hex"], nom_complet, av["compagnie"]) if idx < 8 else cache_photos.get(f"{av['hex']}_{av['immat']}_{nom_complet}")
+                if idx == 0:
+                    det = obtenir_details_vol(av["fr24_id"])
+                    if det.get("age"):
+                        av["age"] = det["age"]
+                    if det.get("eta_ts"):
+                        av["eta_ts"] = det["eta_ts"]
                 liste_enrichie.append({
                     "vol": av,
                     "specs": sp,
@@ -511,15 +576,19 @@ class RadarHandler(SimpleHTTPRequestHandler):
                 if not etat.get("maj_serveur"):
                     declencher = True
 
-                # Si un appareil spécifique est verrouillé par l'utilisateur
                 if hex_cible and etat.get("liste_avions"):
                     trouve = next((item for item in etat["liste_avions"] if item["vol"]["hex"] == hex_cible), None)
                     if trouve:
-                        v = trouve["vol"]
+                        v = dict(trouve["vol"])
                         s = trouve["specs"]
                         photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
                         if photo:
                             trouve["photo"] = photo
+                        det = obtenir_details_vol(v.get("fr24_id"))
+                        if det.get("age"):
+                            v["age"] = det["age"]
+                        if det.get("eta_ts"):
+                            v["eta_ts"] = det["eta_ts"]
                         etat["vol"] = v
                         etat["specs"] = s
                         etat["photo"] = trouve["photo"]
@@ -527,11 +596,17 @@ class RadarHandler(SimpleHTTPRequestHandler):
                     else:
                         etat["verrouille"] = False
                 elif etat.get("statut") == "actif":
-                    v = etat["vol"]
+                    v = dict(etat["vol"])
                     s = etat.get("specs", {})
                     photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
                     if photo:
                         etat["photo"] = photo
+                    det = obtenir_details_vol(v.get("fr24_id"))
+                    if det.get("age"):
+                        v["age"] = det["age"]
+                    if det.get("eta_ts"):
+                        v["eta_ts"] = det["eta_ts"]
+                    etat["vol"] = v
                     etat["verrouille"] = False
 
                 payload = json.dumps(etat).encode("utf-8")
