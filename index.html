@@ -52,6 +52,10 @@
     }
     .backdrop-layer.visible { opacity: 1; }
 
+    .backdrop-reflection-layer {
+      display: none;
+    }
+
     .backdrop-overlay {
       position: fixed;
       inset: 0;
@@ -59,10 +63,6 @@
       background:
         radial-gradient(circle at 20% 85%, rgba(7, 11, 20, 0.92) 0%, rgba(7, 11, 20, 0.52) 45%, rgba(7, 11, 20, 0.10) 85%),
         linear-gradient(to top, rgba(7, 11, 20, 0.85) 0%, rgba(7, 11, 20, 0.05) 55%);
-    }
-
-    .backdrop-blur-fade {
-      display: none;
     }
 
     .main-stage {
@@ -987,46 +987,62 @@
         -webkit-tap-highlight-color: transparent;
       }
 
-      /* Photo paysage complète en haut (100% visible, sans rognage) */
+      /* 1. Photo nette centrée verticalement entre le header et le nom du modèle */
       .backdrop-layer {
-        inset: 0 0 auto 0;
-        height: 46dvh;
+        inset: auto;
+        top: calc(4.9rem + env(safe-area-inset-top));
+        left: 0;
+        right: 0;
+        height: 31dvh;
+        z-index: 1;
         background-size: contain;
-        background-position: center top;
-        background-color: var(--bg-dark);
-        filter: brightness(0.95) contrast(1.04);
+        background-position: center center;
+        background-color: transparent;
+        filter: brightness(0.98) contrast(1.04) saturate(1.06);
+        mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 92%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 92%, transparent 100%);
       }
 
-      /* Dégradé progressif de la photo vers le fond sombre */
+      /* 2. Reflet inversé (reverse) flouté vers le bas pour étendre l'ambiance jusqu'au pied de page */
+      .backdrop-reflection-layer {
+        display: block;
+        position: fixed;
+        top: calc(4.9rem + env(safe-area-inset-top) + 30dvh);
+        left: -10%;
+        right: -10%;
+        height: 46dvh;
+        z-index: 0;
+        pointer-events: none;
+        background-size: cover;
+        background-position: center bottom;
+        background-repeat: no-repeat;
+        transform: scaleY(-1);
+        filter: blur(28px) brightness(0.58) saturate(1.25);
+        opacity: 0;
+        transition: opacity 0.45s ease-in-out;
+        mask-image: linear-gradient(to top, black 0%, rgba(0, 0, 0, 0.72) 45%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to top, black 0%, rgba(0, 0, 0, 0.72) 45%, transparent 100%);
+      }
+
+      .backdrop-reflection-layer.visible {
+        opacity: 0.85;
+      }
+
+      /* Dégradé de fusion douce derrière le HUD */
       .backdrop-overlay {
-        inset: 0 0 auto 0;
-        height: 48dvh;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
         background:
           linear-gradient(
             to bottom,
-            rgba(7, 11, 20, 0.62) 0%,
-            rgba(7, 11, 20, 0.0) 24%,
-            rgba(7, 11, 20, 0.0) 56%,
-            rgba(7, 11, 20, 0.72) 82%,
+            rgba(7, 11, 20, 0.88) 0%,
+            rgba(7, 11, 20, 0.0) 15%,
+            rgba(7, 11, 20, 0.0) 44%,
+            rgba(7, 11, 20, 0.68) 60%,
+            rgba(7, 11, 20, 0.94) 84%,
             #070b14 100%
           );
-      }
-
-      /* Fondu flou progressif sous la photo jusqu'au bas de l'écran */
-      .backdrop-blur-fade {
-        display: block;
-        position: fixed;
-        top: 31dvh;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 1;
-        pointer-events: none;
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.65) 18%, black 36%);
-        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.65) 18%, black 36%);
-        background: linear-gradient(to bottom, rgba(7, 11, 20, 0) 0%, rgba(7, 11, 20, 0.78) 28%, #070b14 58%);
       }
 
       .top-bar {
@@ -1036,7 +1052,7 @@
           0.6rem
           calc(1rem + env(safe-area-inset-left));
         gap: 0.45rem;
-        background: linear-gradient(to bottom, rgba(7, 11, 20, 0.72) 0%, rgba(7, 11, 20, 0) 100%);
+        background: linear-gradient(to bottom, rgba(7, 11, 20, 0.78) 0%, rgba(7, 11, 20, 0) 100%);
         transition: background 0.4s ease;
       }
 
@@ -1116,10 +1132,10 @@
         padding: 0.36rem 0.7rem;
       }
 
-      /* Positionne le titre du modèle et la frise juste sous la photo complète */
+      /* Positionne le bloc compagnie / modèle juste sous la photo centrée */
       .bottom-dock {
         margin-top: auto;
-        padding-top: 23dvh;
+        padding-top: 31dvh;
       }
 
       .rare-banner {
@@ -1286,10 +1302,11 @@
     </div>
   </div>
 
+  <div class="backdrop-reflection-layer" id="bg-ref-a"></div>
+  <div class="backdrop-reflection-layer" id="bg-ref-b"></div>
   <div class="backdrop-layer" id="bg-a"></div>
   <div class="backdrop-layer" id="bg-b"></div>
   <div class="backdrop-overlay"></div>
-  <div class="backdrop-blur-fade"></div>
 
   <!-- VOLET LATÉRAL TOUR DE CONTRÔLE -->
   <div class="atc-backdrop" id="atc-backdrop"></div>
@@ -1774,15 +1791,28 @@
     function afficherImageSurCalque(url) {
       const bgA = document.getElementById("bg-a");
       const bgB = document.getElementById("bg-b");
+      const bgRefA = document.getElementById("bg-ref-a");
+      const bgRefB = document.getElementById("bg-ref-b");
+
       if (coucheActive === "a") {
         bgB.style.backgroundImage = `url("${url}")`;
         bgB.classList.add("visible");
         bgA.classList.remove("visible");
+
+        bgRefB.style.backgroundImage = `url("${url}")`;
+        bgRefB.classList.add("visible");
+        bgRefA.classList.remove("visible");
+
         coucheActive = "b";
       } else {
         bgA.style.backgroundImage = `url("${url}")`;
         bgA.classList.add("visible");
         bgB.classList.remove("visible");
+
+        bgRefA.style.backgroundImage = `url("${url}")`;
+        bgRefA.classList.add("visible");
+        bgRefB.classList.remove("visible");
+
         coucheActive = "a";
       }
     }
