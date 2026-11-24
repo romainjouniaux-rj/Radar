@@ -6,6 +6,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -144,11 +145,13 @@ COORDS_AEROPORTS = {
 }
 
 BASE_AVIONS = {}
-CACHE_PHOTOS = {}
+CACHE_PHOTOS = {}  # cle -> {"ts": float, "data": dict | None}
 CACHE_DETAILS_VOLS = {}
 ETAT_PAR_ZONE = {}
 ZONE_ACTIVE_SERVEUR = "TLS"
 LOCK_ETAT = threading.Lock()
+LOCK_PHOTOS = threading.Lock()
+POOL_PHOTOS = ThreadPoolExecutor(max_workers=6)
 
 
 def charger_base_csv():
@@ -208,36 +211,111 @@ def determiner_phase(altitude_ft, taux_vertical, distance_km):
     return "CROISIÈRE / TRANSIT"
 
 
-def obtenir_photo(immat, icao):
-    cle = f"{immat}_{icao}"
-    if cle in CACHE_PHOTOS:
-        return CACHE_PHOTOS[cle]
+def _interroger_planespotters(url, headers):
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=2.8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        photos = data.get("photos", [])
+        if photos:
+            p = photos[0]
+            large = (p.get("thumbnail_large") or {}).get("src")
+            thumb = (p.get("thumbnail") or {}).get("src")
+            src = large or thumb
+            if src:
+                return {
+                    "url": src,
+                    "thumb": thumb or src,
+                    "auteur": p.get("photographer", "Planespotters.net")
+                }
+    return None
 
-    headers = {"User-Agent": "RadarApprocheLive/1.0"}
-    urls_a_tester = []
-    if immat and immat != "N/A":
-        urls_a_tester.append(f"https://api.planespotters.net/pub/photos/reg/{urllib.parse.quote(immat)}")
-    if icao and icao != "N/A":
-        urls_a_tester.append(f"https://api.planespotters.net/pub/photos/type/{urllib.parse.quote(icao)}")
 
-    for url in urls_a_tester:
+def _interroger_wikimedia(requete, headers):
+    if not requete:
+        return None
+    q = urllib.parse.quote(f"{requete} aircraft")
+    url = (
+        "https://commons.wikimedia.org/w/api.php?action=query&generator=search"
+        f"&gsrsearch={q}&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|user&iiurlwidth=1280&format=json"
+    )
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=2.8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        pages = (data.get("query") or {}).get("pages") or {}
+        for page in pages.values():
+            infos = page.get("imageinfo") or []
+            if not infos:
+                continue
+            info = infos[0]
+            img_url = info.get("thumburl") or info.get("url") or ""
+            if img_url and any(img_url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
+                auteur = info.get("user") or "Wikimedia Commons"
+                return {
+                    "url": img_url,
+                    "thumb": img_url,
+                    "auteur": f"{auteur} (Wikimedia)"
+                }
+    return None
+
+
+def obtenir_photo(immat, icao, compagnie="", modele=""):
+    immat_u = (immat or "").strip().upper()
+    icao_u = (icao or "").strip().upper()
+    comp_clean = (compagnie or "").strip()
+    cle = f"{immat_u}_{icao_u}_{comp_clean}"
+    maintenant = time.time()
+
+    with LOCK_PHOTOS:
+        if cle in CACHE_PHOTOS:
+            entree = CACHE_PHOTOS[cle]
+            ttl = 86400 if entree["data"] else 60
+            if maintenant - entree["ts"] < ttl:
+                return entree["data"]
+
+    headers = {
+        "User-Agent": "RadarApprocheLive/2.0 (https://github.com)",
+        "Accept": "application/json"
+    }
+
+    urls_ps = []
+    if immat_u and immat_u != "N/A":
+        urls_ps.append(f"https://api.planespotters.net/pub/photos/reg/{urllib.parse.quote(immat_u)}")
+    if icao_u and icao_u != "N/A":
+        urls_ps.append(f"https://api.planespotters.net/pub/photos/type/{urllib.parse.quote(icao_u)}")
+
+    res = None
+    for url in urls_ps:
         try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                photos = data.get("photos", [])
-                if photos:
-                    p = photos[0]
-                    src = (p.get("thumbnail_large") or {}).get("src") or (p.get("thumbnail") or {}).get("src")
-                    if src:
-                        res = {"url": src, "auteur": p.get("photographer", "Planespotters.net")}
-                        CACHE_PHOTOS[cle] = res
-                        return res
+            res = _interroger_planespotters(url, headers)
+            if res:
+                break
         except Exception:
             continue
 
-    CACHE_PHOTOS[cle] = None
-    return None
+    # Repli 2 : Recherche Wikimedia Commons (compagnie + modèle ou type OACI)
+    if not res:
+        terme_wiki = f"{comp_clean} {modele or icao_u}".strip()
+        if terme_wiki and terme_wiki != "N/A":
+            try:
+                res = _interroger_wikimedia(terme_wiki, headers)
+            except Exception:
+                res = None
+
+    with LOCK_PHOTOS:
+        CACHE_PHOTOS[cle] = {"ts": time.time(), "data": res}
+
+    return res
+
+
+def precharger_photos_parallele(liste_avions):
+    if not liste_avions:
+        return
+    cibles = liste_avions[:6]
+    for item in cibles:
+        v = item["vol"]
+        s = item.get("specs") or {}
+        modele = f"{s.get('manufacturer', '')} {s.get('model', '')}".strip()
+        POOL_PHOTOS.submit(obtenir_photo, v["immat"], v["icao"], v.get("compagnie", ""), modele)
 
 
 def obtenir_details_vol_fr24(flight_id):
@@ -256,7 +334,7 @@ def obtenir_details_vol_fr24(flight_id):
     }
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
             airport = raw.get("airport") or {}
             orig = airport.get("origin") or {}
@@ -399,6 +477,9 @@ def interroger_fr24(zone_id):
         avions_detectes.append({"vol": vol_obj, "specs": specs})
 
     avions_detectes.sort(key=lambda x: x["vol"]["distance_km"])
+
+    # Préchargement parallèle immédiat des 6 photos les plus proches
+    precharger_photos_parallele(avions_detectes)
 
     for item in avions_detectes[:5]:
         v = item["vol"]
@@ -566,7 +647,13 @@ class RadarHandler(BaseHTTPRequestHandler):
 
             vol_cible = cible["vol"]
             specs_cible = cible["specs"]
-            photo = obtenir_photo(vol_cible["immat"], vol_cible["icao"])
+            modele_cible = f"{specs_cible.get('manufacturer', '')} {specs_cible.get('model', '')}".strip()
+            photo = obtenir_photo(
+                vol_cible["immat"],
+                vol_cible["icao"],
+                vol_cible.get("compagnie", ""),
+                modele_cible
+            )
 
             self.envoyer_json({
                 "statut": "actif",
