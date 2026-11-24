@@ -1,9 +1,8 @@
 {
   "name": "Radar Approche — Temps Réel",
   "short_name": "Radar Live",
-  "description": "Radar aérien temps réel multi-aéroports",
   "start_url": "/",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "any",
   "background_color": "#070b14",
   "theme_color": "#070b14",
@@ -11,8 +10,7 @@
     {
       "src": "/icon.svg",
       "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/svg+xml"
     }
   ]
 }
