@@ -44,9 +44,10 @@
       inset: 0;
       z-index: 0;
       background-size: cover;
+      background-repeat: no-repeat;
       background-position: 62% 40%;
       transition: opacity 0.45s ease-in-out;
-      filter: brightness(0.86) contrast(1.05) saturate(1.08);
+      filter: brightness(0.90) contrast(1.04) saturate(1.06);
       opacity: 0;
     }
     .backdrop-layer.visible { opacity: 1; }
@@ -58,6 +59,10 @@
       background:
         radial-gradient(circle at 20% 85%, rgba(7, 11, 20, 0.92) 0%, rgba(7, 11, 20, 0.52) 45%, rgba(7, 11, 20, 0.10) 85%),
         linear-gradient(to top, rgba(7, 11, 20, 0.85) 0%, rgba(7, 11, 20, 0.05) 55%);
+    }
+
+    .backdrop-blur-fade {
+      display: none;
     }
 
     .main-stage {
@@ -75,7 +80,7 @@
       justify-content: flex-end;
     }
 
-    /* --- BARRE SUPÉRIEURE FIXE & HORLOGE GLISSANTE --- */
+    /* --- BARRE SUPÉRIEURE FIXE & ÉLÉMENTS GLISSANTS --- */
     .top-bar {
       position: fixed;
       top: 0;
@@ -377,7 +382,9 @@
       padding: 0.42rem 0.92rem;
       border-radius: 999px;
       cursor: pointer;
-      transition: all 0.2s ease;
+      will-change: transform;
+      z-index: 28;
+      transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
     }
 
     .traffic-pill:hover {
@@ -969,7 +976,9 @@
     }
     .photo-credit:empty { display: none; }
 
-    /* --- ADAPTATION MOBILE (<= 768px UNIQUEMENT) --- */
+    /* =====================================================================
+       ADAPTATION MOBILE UNIQUEMENT (<= 768px) — NE TOUCHE PAS AU DESKTOP
+       ===================================================================== */
     @media (max-width: 768px) {
       body {
         height: auto;
@@ -978,19 +987,46 @@
         -webkit-tap-highlight-color: transparent;
       }
 
+      /* Photo paysage complète en haut (100% visible, sans rognage) */
       .backdrop-layer {
-        background-position: 50% 28%;
+        inset: 0 0 auto 0;
+        height: 46dvh;
+        background-size: contain;
+        background-position: center top;
+        background-color: var(--bg-dark);
+        filter: brightness(0.95) contrast(1.04);
       }
 
+      /* Dégradé progressif de la photo vers le fond sombre */
       .backdrop-overlay {
+        inset: 0 0 auto 0;
+        height: 48dvh;
         background:
           linear-gradient(
             to bottom,
-            rgba(7, 11, 20, 0.72) 0%,
-            rgba(7, 11, 20, 0.08) 28%,
-            rgba(7, 11, 20, 0.65) 54%,
-            rgba(7, 11, 20, 0.96) 76%
+            rgba(7, 11, 20, 0.62) 0%,
+            rgba(7, 11, 20, 0.0) 24%,
+            rgba(7, 11, 20, 0.0) 56%,
+            rgba(7, 11, 20, 0.72) 82%,
+            #070b14 100%
           );
+      }
+
+      /* Fondu flou progressif sous la photo jusqu'au bas de l'écran */
+      .backdrop-blur-fade {
+        display: block;
+        position: fixed;
+        top: 31dvh;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+        pointer-events: none;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.65) 18%, black 36%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.65) 18%, black 36%);
+        background: linear-gradient(to bottom, rgba(7, 11, 20, 0) 0%, rgba(7, 11, 20, 0.78) 28%, #070b14 58%);
       }
 
       .top-bar {
@@ -1000,7 +1036,7 @@
           0.6rem
           calc(1rem + env(safe-area-inset-left));
         gap: 0.45rem;
-        background: linear-gradient(to bottom, rgba(7, 11, 20, 0.78) 0%, rgba(7, 11, 20, 0) 100%);
+        background: linear-gradient(to bottom, rgba(7, 11, 20, 0.72) 0%, rgba(7, 11, 20, 0) 100%);
         transition: background 0.4s ease;
       }
 
@@ -1008,9 +1044,17 @@
         background: transparent;
       }
 
+      /* En mode veille sur mobile : Horloge en haut à gauche, Tour de contrôle en haut à droite */
       body.idle-mode .live-clock {
+        position: fixed;
         top: calc(0.65rem + env(safe-area-inset-top));
         left: calc(1rem + env(safe-area-inset-left));
+      }
+
+      body.idle-mode .traffic-pill {
+        position: fixed;
+        top: calc(0.65rem + env(safe-area-inset-top));
+        right: calc(1rem + env(safe-area-inset-right));
       }
 
       .main-stage {
@@ -1072,9 +1116,10 @@
         padding: 0.36rem 0.7rem;
       }
 
+      /* Positionne le titre du modèle et la frise juste sous la photo complète */
       .bottom-dock {
         margin-top: auto;
-        padding-top: 22vh;
+        padding-top: 23dvh;
       }
 
       .rare-banner {
@@ -1244,6 +1289,7 @@
   <div class="backdrop-layer" id="bg-a"></div>
   <div class="backdrop-layer" id="bg-b"></div>
   <div class="backdrop-overlay"></div>
+  <div class="backdrop-blur-fade"></div>
 
   <!-- VOLET LATÉRAL TOUR DE CONTRÔLE -->
   <div class="atc-backdrop" id="atc-backdrop"></div>
@@ -1346,12 +1392,12 @@
       <div class="live-clock" id="live-clock">--:--:--</div>
     </div>
 
-    <div class="top-right fadeable-ui">
-      <button type="button" class="alert-pill" id="alert-btn" title="Recevoir une notification lors du passage d'un appareil rare">
+    <div class="top-right">
+      <button type="button" class="alert-pill fadeable-ui" id="alert-btn" title="Recevoir une notification lors du passage d'un appareil rare">
         <span id="alert-icon">🔕</span>
         <span id="alert-label">Alertes Rares</span>
       </button>
-      <button type="button" class="lock-pill" id="unlock-btn" title="Revenir automatiquement sur l'avion le plus proche">
+      <button type="button" class="lock-pill fadeable-ui" id="unlock-btn" title="Revenir automatiquement sur l'avion le plus proche">
         <span>🔒 SUIVI VERROUILLÉ • Direct</span>
       </button>
       <button type="button" class="traffic-pill" id="traffic-btn" title="Ouvrir la liste des avions en zone">
@@ -1597,30 +1643,37 @@
       actualiser();
     });
 
-    // --- MODE ÉCRAN DE VEILLE AVEC ANIMATION FLIP DE L'HORLOGE ---
+    // --- MODE ÉCRAN DE VEILLE AVEC ANIMATION FLIP (HORLOGE + TOUR DE CONTRÔLE MOBILE) ---
     const dropdown = document.getElementById("airport-dropdown");
     const trigger = document.getElementById("airport-trigger");
     const options = document.querySelectorAll(".airport-option");
     const liveClock = document.getElementById("live-clock");
 
-    function basculerModeVeille(actif) {
-      const dejaActif = document.body.classList.contains("idle-mode");
-      if (actif === dejaActif) return;
-
-      const avant = liveClock.getBoundingClientRect();
-      document.body.classList.toggle("idle-mode", actif);
-      const apres = liveClock.getBoundingClientRect();
-
+    function animerFlipElement(el, avant) {
+      const apres = el.getBoundingClientRect();
       const dx = avant.left - apres.left;
       const dy = avant.top - apres.top;
 
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-        liveClock.style.transition = "none";
-        liveClock.style.transform = `translate(${dx}px, ${dy}px)`;
-        liveClock.offsetHeight;
-        liveClock.style.transition = "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)";
-        liveClock.style.transform = "translate(0, 0)";
+        el.style.transition = "none";
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
+        el.offsetHeight;
+        el.style.transition = "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)";
+        el.style.transform = "translate(0, 0)";
       }
+    }
+
+    function basculerModeVeille(actif) {
+      const dejaActif = document.body.classList.contains("idle-mode");
+      if (actif === dejaActif) return;
+
+      const avantClock = liveClock.getBoundingClientRect();
+      const avantTraffic = trafficBtn.getBoundingClientRect();
+
+      document.body.classList.toggle("idle-mode", actif);
+
+      animerFlipElement(liveClock, avantClock);
+      animerFlipElement(trafficBtn, avantTraffic);
     }
 
     function reinitialiserInactivite() {
@@ -1736,24 +1789,10 @@
 
     function changerPhoto(photoObj) {
       const urlHd = photoObj && photoObj.url ? photoObj.url : "";
-      const urlThumb = photoObj && photoObj.thumb ? photoObj.thumb : urlHd;
-
-      if (!urlHd) return;
-      if (urlHd === derniereUrlPhoto) return;
+      if (!urlHd || urlHd === derniereUrlPhoto) return;
       derniereUrlPhoto = urlHd;
 
-      // 1. Afficher la miniature légère quasi instantanément si disponible
-      if (urlThumb && urlThumb !== urlHd) {
-        const imgThumb = new Image();
-        imgThumb.onload = () => {
-          if (derniereUrlPhoto === urlHd) {
-            afficherImageSurCalque(urlThumb);
-          }
-        };
-        imgThumb.src = urlThumb;
-      }
-
-      // 2. Charger la haute définition en parallèle et basculer sans coupure
+      // Charger uniquement la version Haute Définition et l'afficher une fois prête
       const imgHd = new Image();
       imgHd.onload = () => {
         if (derniereUrlPhoto === urlHd) {
