@@ -145,7 +145,7 @@ COORDS_AEROPORTS = {
 }
 
 BASE_AVIONS = {}
-CACHE_PHOTOS = {}  # cle -> {"ts": float, "data": dict | None}
+CACHE_PHOTOS = {}
 CACHE_DETAILS_VOLS = {}
 ETAT_PAR_ZONE = {}
 ZONE_ACTIVE_SERVEUR = "TLS"
@@ -213,33 +213,38 @@ def determiner_phase(altitude_ft, taux_vertical, distance_km):
 
 def _interroger_planespotters(url, headers):
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=2.8) as resp:
+    with urllib.request.urlopen(req, timeout=3.0) as resp:
         data = json.loads(resp.read().decode("utf-8"))
         photos = data.get("photos", [])
-        if photos:
-            p = photos[0]
-            large = (p.get("thumbnail_large") or {}).get("src")
-            thumb = (p.get("thumbnail") or {}).get("src")
-            src = large or thumb
-            if src:
-                return {
+        # Trier pour privilégier la photo la plus large disponible (vrai format HD)
+        meilleure = None
+        meilleure_largeur = 0
+        for p in photos:
+            tl = p.get("thumbnail_large") or {}
+            src = tl.get("src") or ""
+            largeur = int((tl.get("size") or {}).get("width") or 0)
+            if src and largeur >= meilleure_largeur:
+                meilleure_largeur = largeur
+                meilleure = {
                     "url": src,
-                    "thumb": thumb or src,
                     "auteur": p.get("photographer", "Planespotters.net")
                 }
+        if meilleure and meilleure_largeur >= 700:
+            return meilleure
     return None
 
 
-def _interroger_wikimedia(requete, headers):
+def _interroger_wikimedia_hd(requete, headers):
     if not requete:
         return None
     q = urllib.parse.quote(f"{requete} aircraft")
+    # iiurlwidth=1920 force une image Full HD nette et rapide
     url = (
         "https://commons.wikimedia.org/w/api.php?action=query&generator=search"
-        f"&gsrsearch={q}&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url|user&iiurlwidth=1280&format=json"
+        f"&gsrsearch={q}&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url|size|user&iiurlwidth=1920&format=json"
     )
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=2.8) as resp:
+    with urllib.request.urlopen(req, timeout=3.2) as resp:
         data = json.loads(resp.read().decode("utf-8"))
         pages = (data.get("query") or {}).get("pages") or {}
         for page in pages.values():
@@ -247,13 +252,17 @@ def _interroger_wikimedia(requete, headers):
             if not infos:
                 continue
             info = infos[0]
+            w = int(info.get("width") or 0)
+            h = int(info.get("height") or 0)
+            # Exclure les petites images et les formats verticaux/carrés pour garder un beau cadrage avion
+            if w < 1100 or h >= w:
+                continue
             img_url = info.get("thumburl") or info.get("url") or ""
-            if img_url and any(img_url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
+            if img_url and any(img_url.lower().split("?")[0].endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
                 auteur = info.get("user") or "Wikimedia Commons"
                 return {
                     "url": img_url,
-                    "thumb": img_url,
-                    "auteur": f"{auteur} (Wikimedia)"
+                    "auteur": f"{auteur} (Wikimedia HD)"
                 }
     return None
 
@@ -268,38 +277,50 @@ def obtenir_photo(immat, icao, compagnie="", modele=""):
     with LOCK_PHOTOS:
         if cle in CACHE_PHOTOS:
             entree = CACHE_PHOTOS[cle]
-            ttl = 86400 if entree["data"] else 60
+            ttl = 86400 if entree["data"] else 45
             if maintenant - entree["ts"] < ttl:
                 return entree["data"]
 
     headers = {
-        "User-Agent": "RadarApprocheLive/2.0 (https://github.com)",
+        "User-Agent": "RadarApprocheLive/2.1 (https://github.com)",
         "Accept": "application/json"
     }
 
-    urls_ps = []
-    if immat_u and immat_u != "N/A":
-        urls_ps.append(f"https://api.planespotters.net/pub/photos/reg/{urllib.parse.quote(immat_u)}")
-    if icao_u and icao_u != "N/A":
-        urls_ps.append(f"https://api.planespotters.net/pub/photos/type/{urllib.parse.quote(icao_u)}")
-
     res = None
-    for url in urls_ps:
-        try:
-            res = _interroger_planespotters(url, headers)
-            if res:
-                break
-        except Exception:
-            continue
 
-    # Repli 2 : Recherche Wikimedia Commons (compagnie + modèle ou type OACI)
-    if not res:
-        terme_wiki = f"{comp_clean} {modele or icao_u}".strip()
-        if terme_wiki and terme_wiki != "N/A":
-            try:
-                res = _interroger_wikimedia(terme_wiki, headers)
-            except Exception:
-                res = None
+    # 1. Photo exacte de l'appareil par immatriculation sur Planespotters (HD >= 700px)
+    if immat_u and immat_u != "N/A":
+        try:
+            res = _interroger_planespotters(
+                f"https://api.planespotters.net/pub/photos/reg/{urllib.parse.quote(immat_u)}",
+                headers
+            )
+        except Exception:
+            res = None
+
+    # 2. Si introuvable en HD, chercher la livrée exacte Compagnie + Modèle sur Wikimedia Full HD (1920px)
+    if not res and comp_clean and (modele or icao_u):
+        try:
+            res = _interroger_wikimedia_hd(f"{comp_clean} {modele or icao_u}", headers)
+        except Exception:
+            res = None
+
+    # 3. Repli par type d'avion OACI sur Planespotters HD
+    if not res and icao_u and icao_u != "N/A":
+        try:
+            res = _interroger_planespotters(
+                f"https://api.planespotters.net/pub/photos/type/{urllib.parse.quote(icao_u)}",
+                headers
+            )
+        except Exception:
+            res = None
+
+    # 4. Dernier repli Wikimedia Full HD par modèle seul
+    if not res and (modele or icao_u):
+        try:
+            res = _interroger_wikimedia_hd(f"{modele or icao_u}", headers)
+        except Exception:
+            res = None
 
     with LOCK_PHOTOS:
         CACHE_PHOTOS[cle] = {"ts": time.time(), "data": res}
@@ -477,8 +498,6 @@ def interroger_fr24(zone_id):
         avions_detectes.append({"vol": vol_obj, "specs": specs})
 
     avions_detectes.sort(key=lambda x: x["vol"]["distance_km"])
-
-    # Préchargement parallèle immédiat des 6 photos les plus proches
     precharger_photos_parallele(avions_detectes)
 
     for item in avions_detectes[:5]:
