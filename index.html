@@ -105,7 +105,7 @@
     }
 
     .fadeable-ui {
-      transition: opacity 0.45s ease, transform 0.45s ease;
+      transition: opacity 0.4s ease, transform 0.4s ease;
     }
 
     body.idle-mode .fadeable-ui {
@@ -1023,7 +1023,7 @@
           );
       }
 
-      /* 2. Carte vitrine nette aux coins arrondis (ratio 3:2 complet sans coupure) */
+      /* 2. Carte vitrine nette aux coins arrondis (ratio 16:10 complet sans coupure) */
       .backdrop-layer {
         inset: auto;
         top: calc(5.35rem + env(safe-area-inset-top));
@@ -1042,12 +1042,12 @@
           0 0 0 1px rgba(7, 11, 20, 0.45),
           inset 0 1px 0 rgba(255, 255, 255, 0.22);
         filter: brightness(0.98) contrast(1.03) saturate(1.05);
-        transition: opacity 0.45s ease-in-out, top 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        transition: opacity 0.45s ease-in-out, top 0.42s cubic-bezier(0.22, 1, 0.36, 1);
       }
 
-      /* En mode veille, la carte vitrine remonte légèrement et respire encore mieux */
+      /* Quand le bandeau disparaît (veille ou scroll vers le bas), la carte vitrine remonte */
       body.idle-mode .backdrop-layer {
-        top: calc(3.8rem + env(safe-area-inset-top));
+        top: calc(3.4rem + env(safe-area-inset-top));
       }
 
       .top-bar {
@@ -1060,7 +1060,7 @@
         background: transparent;
       }
 
-      /* En mode veille sur mobile : Horloge en haut à gauche, Tour de contrôle en haut à droite */
+      /* Bandeau masqué (veille ou scroll bas) : Horloge en haut à gauche, Tour de contrôle en haut à droite */
       body.idle-mode .live-clock {
         position: fixed;
         top: calc(0.65rem + env(safe-area-inset-top));
@@ -1660,7 +1660,7 @@
       actualiser();
     });
 
-    // --- MODE ÉCRAN DE VEILLE AVEC ANIMATION FLIP (HORLOGE + TOUR DE CONTRÔLE MOBILE) ---
+    // --- MODE ÉCRAN DE VEILLE & MASQUAGE AU SCROLL (ANIMATION FLIP) ---
     const dropdown = document.getElementById("airport-dropdown");
     const trigger = document.getElementById("airport-trigger");
     const options = document.querySelectorAll(".airport-option");
@@ -1675,7 +1675,7 @@
         el.style.transition = "none";
         el.style.transform = `translate(${dx}px, ${dy}px)`;
         el.offsetHeight;
-        el.style.transition = "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)";
+        el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
         el.style.transform = "translate(0, 0)";
       }
     }
@@ -1693,8 +1693,7 @@
       animerFlipElement(trafficBtn, avantTraffic);
     }
 
-    function reinitialiserInactivite() {
-      basculerModeVeille(false);
+    function lancerMinuteurInactivite() {
       clearTimeout(timerInactivite);
       timerInactivite = setTimeout(() => {
         if (!dropdown.classList.contains("open") && !atcDrawer.classList.contains("open")) {
@@ -1703,10 +1702,48 @@
       }, 8000);
     }
 
-    ["mousemove", "mousedown", "keydown", "touchstart"].forEach(evt => {
+    function reinitialiserInactivite() {
+      basculerModeVeille(false);
+      lancerMinuteurInactivite();
+    }
+
+    // Détection intelligente du défilement (masque en descendant, réaffiche en remontant)
+    let dernierScrollY = window.scrollY || 0;
+    window.addEventListener("scroll", () => {
+      const scrollActuel = Math.max(0, window.scrollY || 0);
+      const delta = scrollActuel - dernierScrollY;
+
+      if (Math.abs(delta) < 6) return;
+
+      if (delta > 0 && scrollActuel > 36) {
+        // Descente : on masque le bandeau
+        if (!dropdown.classList.contains("open") && !atcDrawer.classList.contains("open")) {
+          clearTimeout(timerInactivite);
+          basculerModeVeille(true);
+        }
+      } else if (delta < 0 || scrollActuel <= 20) {
+        // Remontée : on réaffiche le bandeau et relance le timer d'inactivité
+        basculerModeVeille(false);
+        lancerMinuteurInactivite();
+      }
+
+      dernierScrollY = scrollActuel;
+    }, { passive: true });
+
+    ["mousemove", "mousedown", "keydown"].forEach(evt => {
       document.addEventListener(evt, reinitialiserInactivite, { passive: true });
     });
-    reinitialiserInactivite();
+
+    // Sur écran tactile : un tap réaffiche le bandeau (sans bloquer la logique de scroll)
+    document.addEventListener("touchstart", (e) => {
+      if (e.target.closest("#airport-dropdown") || e.target.closest("#atc-drawer") || e.target.closest(".top-bar")) {
+        reinitialiserInactivite();
+      } else if ((window.scrollY || 0) <= 20) {
+        reinitialiserInactivite();
+      }
+    }, { passive: true });
+
+    lancerMinuteurInactivite();
 
     // --- GESTION DU MENU DÉROULANT PERSONNALISÉ ---
     function synchroniserDropdown(id) {
