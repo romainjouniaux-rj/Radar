@@ -1,632 +1,1891 @@
-import csv
-import json
-import math
-import os
-import socket
-import threading
-import time
-import urllib.parse
-from datetime import datetime
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import requests
-import urllib3
-import urllib3.util.connection as urllib3_cn
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-urllib3_cn.allowed_gai_family = lambda: socket.AF_INET
-
-AEROPORTS_PRESETS = {
-    "TLS": {"nom": "TOULOUSE BLAGNAC (TLS)", "lat": 43.6290, "lon": 1.3638, "rayon": 90},
-    "DXB": {"nom": "DUBAÏ DXB • APPROCHE TERRE (30L/30R)", "lat": 25.2150, "lon": 55.4350, "rayon": 65},
-    "CDG": {"nom": "PARIS CHARLES DE GAULLE (CDG)", "lat": 49.0097, "lon": 2.5479, "rayon": 75},
-    "LHR": {"nom": "LONDRES HEATHROW (LHR)", "lat": 51.4700, "lon": -0.4543, "rayon": 65},
-    "JFK": {"nom": "NEW YORK JFK (JFK)", "lat": 40.6413, "lon": -73.7781, "rayon": 75},
-    "SIN": {"nom": "SINGAPOUR CHANGI (SIN)", "lat": 1.3644, "lon": 103.9915, "rayon": 70}
-}
-
-ZONE_DEFAUT = "TLS"
-INTERVALLE_SCAN_SEC = 5
-DUREE_ACTIVITE_ZONE_SEC = 25
-FICHIER_CSV = "avions.csv"
-PORT = int(os.environ.get("PORT", 8000))
-
-AVIONS_RARES_ICAO = {
-    "A337": "AIRBUS BELUGAXL",
-    "A3ST": "AIRBUS BELUGA",
-    "A388": "SUPERJUMBO A380",
-    "A35K": "AIRBUS A350-1000",
-    "B748": "BOEING 747-8",
-    "B744": "BOEING 747-400",
-    "BLCF": "BOEING DREAMLIFFTER",
-    "B779": "BOEING 777-9X",
-    "A124": "ANTONOV AN-124",
-    "A225": "ANTONOV AN-225",
-    "C5M": "LOCKHEED C-5 GALAXY",
-    "C17": "BOEING C-17 GLOBEMASTER",
-    "A400": "AIRBUS A400M ATLAS",
-    "K35R": "BOEING KC-135",
-    "E3TF": "BOEING E-3 AWACS"
-}
-
-AEROPORTS_IATA = {
-    "TLS": "Toulouse-Blagnac", "ORY": "Paris-Orly", "CDG": "Paris-CDG", "BVA": "Paris-Beauvais",
-    "LYS": "Lyon-Saint-Exupéry", "MRS": "Marseille-Provence", "NCE": "Nice-Côte d'Azur",
-    "BOD": "Bordeaux-Mérignac", "NTE": "Nantes-Atlantique", "SXB": "Strasbourg",
-    "LIL": "Lille", "MPL": "Montpellier", "BIQ": "Biarritz", "PUF": "Pau", "PGF": "Perpignan",
-    "RNS": "Rennes", "BES": "Brest", "FSC": "Figari", "AJA": "Ajaccio", "BIA": "Bastia", "CLY": "Calvi",
-    "LHR": "Londres-Heathrow", "LGW": "Londres-Gatwick", "STN": "Londres-Stansted", "LTN": "Londres-Luton",
-    "LCY": "Londres-City", "MAN": "Manchester", "BHX": "Birmingham", "EDI": "Édimbourg", "BRS": "Bristol",
-    "DUB": "Dublin", "ORK": "Cork",
-    "FRA": "Francfort", "MUC": "Munich", "BER": "Berlin", "DUS": "Düsseldorf", "HAM": "Hambourg", "CGN": "Cologne", "STR": "Stuttgart",
-    "AMS": "Amsterdam-Schiphol", "EIN": "Eindhoven", "BRU": "Bruxelles", "CRL": "Charleroi", "LUX": "Luxembourg",
-    "ZRH": "Zurich", "GVA": "Genève", "BSL": "Bâle-Mulhouse", "VIE": "Vienne",
-    "MAD": "Madrid-Barajas", "BCN": "Barcelone", "PMI": "Palma de Majorque", "AGP": "Malaga",
-    "ALC": "Alicante", "VLC": "Valence", "SVQ": "Séville", "BIO": "Bilbao", "IBZ": "Ibiza", "TFS": "Tenerife", "LPA": "Gran Canaria",
-    "LIS": "Lisbonne", "OPO": "Porto", "FAO": "Faro",
-    "FCO": "Rome-Fiumicino", "MXP": "Milan-Malpensa", "LIN": "Milan-Linate", "BGY": "Milan-Bergame",
-    "VCE": "Venise", "NAP": "Naples", "BLQ": "Bologne", "CTA": "Catane", "PMO": "Palerme",
-    "ATH": "Athènes", "SKG": "Thessalonique", "HER": "Héraklion", "CFU": "Corfou",
-    "CPH": "Copenhague", "OSL": "Oslo", "ARN": "Stockholm", "HEL": "Helsinki", "KEF": "Reykjavik",
-    "WAW": "Varsovie", "KRK": "Cracovie", "PRG": "Prague", "BUD": "Budapest", "OTP": "Bucarest", "BEG": "Belgrade", "ZAG": "Zagreb",
-    "IST": "Istanbul", "SAW": "Istanbul-Sabiha", "AYT": "Antalya",
-    "DXB": "Dubaï", "AUH": "Abou Dabi", "DOH": "Doha", "JED": "Djeddah", "RUH": "Riyad", "TLV": "Tel Aviv", "AMM": "Amman", "BEY": "Beyrouth",
-    "CMN": "Casablanca", "RAK": "Marrakech", "AGA": "Agadir", "FEZ": "Fès", "TNG": "Tanger", "OUD": "Oujda",
-    "ALG": "Alger", "ORN": "Oran", "CZL": "Constantine", "TUN": "Tunis", "DJE": "Djerba", "MIR": "Monastir", "CAI": "Le Caire",
-    "DSS": "Dakar", "ABJ": "Abidjan", "RUN": "La Réunion", "MRU": "Maurice", "JNB": "Johannesburg", "ADD": "Addis-Abeba",
-    "JFK": "New York-JFK", "EWR": "Newark", "BOS": "Boston", "IAD": "Washington", "ATL": "Atlanta", "MIA": "Miami",
-    "ORD": "Chicago", "DFW": "Dallas", "IAH": "Houston", "LAX": "Los Angeles", "SFO": "San Francisco",
-    "YUL": "Montréal", "YYZ": "Toronto", "YVR": "Vancouver",
-    "GRU": "São Paulo", "GIG": "Rio de Janeiro", "EZE": "Buenos Aires", "BOG": "Bogota", "MEX": "Mexico", "CUN": "Cancún",
-    "HND": "Tokyo-Haneda", "NRT": "Tokyo-Narita", "ICN": "Séoul", "PEK": "Pékin", "PVG": "Shanghai",
-    "HKG": "Hong Kong", "SIN": "Singapour", "BKK": "Bangkok", "DEL": "New Delhi", "BOM": "Bombay", "SYD": "Sydney",
-    "KUL": "Kuala Lumpur", "CGK": "Jakarta", "MNL": "Manille", "TPE": "Taipei", "HAN": "Hanoï", "SGN": "Hô Chi Minh-Ville",
-    "XFW": "Hambourg-Finkenwerder (Airbus)", "CEQ": "Cannes", "LBG": "Paris-Le Bourget"
-}
-
-COORDS_AEROPORTS = {
-    "TLS": (43.629, 1.364), "ORY": (48.726, 2.365), "CDG": (49.010, 2.548), "BVA": (49.454, 2.113),
-    "LYS": (45.726, 5.081), "MRS": (43.439, 5.221), "NCE": (43.658, 7.216), "BOD": (44.828, -0.715),
-    "NTE": (47.153, -1.611), "SXB": (48.538, 7.628), "LIL": (50.562, 3.089), "MPL": (43.576, 3.963),
-    "BIQ": (43.468, -1.523), "PUF": (43.380, -0.419), "PGF": (42.740, 2.871), "RNS": (48.069, -1.735),
-    "BES": (48.448, -4.419), "FSC": (41.501, 9.098), "AJA": (41.924, 8.803), "BIA": (42.553, 9.484),
-    "LHR": (51.470, -0.454), "LGW": (51.154, -0.182), "STN": (51.885, 0.235), "LTN": (51.875, -0.368),
-    "LCY": (51.505, 0.055), "MAN": (53.354, -2.275), "BHX": (52.454, -1.748), "EDI": (55.950, -3.372),
-    "BRS": (51.383, -2.719), "DUB": (53.421, -6.270), "ORK": (51.841, -8.491),
-    "FRA": (50.038, 8.562), "MUC": (48.354, 11.786), "BER": (52.367, 13.503), "DUS": (51.289, 6.767),
-    "HAM": (53.630, 9.988), "CGN": (50.866, 7.143), "STR": (48.690, 9.222), "XFW": (53.536, 9.835),
-    "AMS": (52.310, 4.768), "EIN": (51.450, 5.374), "BRU": (50.901, 4.484), "CRL": (50.459, 4.454),
-    "LUX": (49.623, 6.204), "ZRH": (47.465, 8.549), "GVA": (46.238, 6.109), "BSL": (47.590, 7.530),
-    "VIE": (48.110, 16.570), "MAD": (40.498, -3.568), "BCN": (41.297, 2.083), "PMI": (39.552, 2.739),
-    "AGP": (36.675, -4.499), "ALC": (38.282, -0.558), "VLC": (39.489, -0.482), "SVQ": (37.418, -5.893),
-    "BIO": (43.301, -2.911), "IBZ": (38.873, 1.373), "TFS": (28.044, -16.572), "LPA": (27.932, -15.387),
-    "LIS": (38.781, -9.136), "OPO": (41.248, -8.681), "FAO": (37.014, -7.966),
-    "FCO": (41.800, 12.239), "MXP": (45.631, 8.728), "LIN": (45.445, 9.277), "BGY": (45.674, 9.704),
-    "VCE": (45.505, 12.352), "NAP": (40.886, 14.291), "BLQ": (44.535, 11.289), "CTA": (37.467, 15.066),
-    "ATH": (37.936, 23.944), "SKG": (40.520, 22.971), "HER": (35.340, 25.180),
-    "CPH": (55.618, 12.656), "OSL": (60.194, 11.100), "ARN": (59.652, 17.919), "HEL": (60.317, 24.963),
-    "KEF": (63.985, -22.606), "WAW": (52.166, 20.967), "KRK": (50.078, 19.785), "PRG": (50.101, 14.260),
-    "BUD": (47.437, 19.256), "OTP": (44.571, 26.085), "BEG": (44.818, 20.309), "ZAG": (45.743, 16.069),
-    "IST": (41.275, 28.752), "SAW": (40.899, 29.309), "AYT": (36.899, 30.800),
-    "DXB": (25.253, 55.366), "AUH": (24.433, 54.651), "DOH": (25.273, 51.608), "JED": (21.680, 39.157),
-    "RUH": (24.958, 46.699), "TLV": (32.011, 34.887), "AMM": (31.723, 35.993), "BEY": (33.821, 35.488),
-    "CMN": (33.367, -7.590), "RAK": (31.607, -8.036), "AGA": (30.325, -9.413), "FEZ": (33.927, -4.978),
-    "TNG": (35.727, -5.917), "ALG": (36.691, 3.215), "ORN": (35.624, -0.621), "TUN": (36.851, 10.227),
-    "DJE": (33.875, 10.776), "CAI": (30.122, 31.406), "DSS": (14.670, -17.073), "ABJ": (5.261, -3.926),
-    "RUN": (-20.887, 55.510), "MRU": (-20.430, 57.684), "JNB": (-26.139, 28.246), "ADD": (8.978, 38.799),
-    "JFK": (40.641, -73.778), "EWR": (40.690, -74.175), "BOS": (42.366, -71.010), "IAD": (38.953, -77.457),
-    "ATL": (33.641, -84.428), "MIA": (25.796, -80.287), "ORD": (41.974, -87.907), "DFW": (32.899, -97.040),
-    "IAH": (29.990, -95.337), "LAX": (33.942, -118.408), "SFO": (37.621, -122.379),
-    "YUL": (45.471, -73.741), "YYZ": (43.677, -79.625), "YVR": (49.197, -123.182),
-    "GRU": (-23.436, -46.473), "GIG": (-22.810, -43.251), "EZE": (-34.822, -58.536), "BOG": (4.702, -74.147),
-    "MEX": (19.436, -99.072), "CUN": (21.037, -86.877),
-    "HND": (35.549, 139.780), "NRT": (35.772, 140.393), "ICN": (37.460, 126.441), "PEK": (40.080, 116.585),
-    "PVG": (31.144, 121.808), "HKG": (22.308, 113.918), "SIN": (1.364, 103.992), "BKK": (13.690, 100.750),
-    "DEL": (28.556, 77.100), "BOM": (19.089, 72.868), "SYD": (-33.940, 151.175),
-    "KUL": (2.746, 101.710), "CGK": (-6.126, 106.656), "MNL": (14.509, 121.020), "TPE": (25.080, 121.234),
-    "HAN": (21.221, 105.807), "SGN": (10.819, 106.652), "CEQ": (43.542, 6.953), "LBG": (48.969, 2.441)
-}
-
-COMPAGNIES_ICAO = {
-    "AFR": "Air France", "HOP": "Air France Hop", "TVF": "Transavia France",
-    "FPO": "ASL Airlines France", "CRL": "Corsair", "FWI": "Air Caraïbes",
-    "BFM": "French bee", "AEH": "Amelia", "TJT": "Twin Jet", "CCM": "Air Corsica",
-    "AIB": "Airbus", "BGA": "Airbus Transport International",
-    "BAW": "British Airways", "SHT": "British Airways", "CFE": "BA CityFlyer",
-    "EZY": "easyJet", "EJU": "easyJet", "EZS": "easyJet",
-    "EXS": "Jet2.com", "TOM": "TUI Airways", "VIR": "Virgin Atlantic", "LOG": "Loganair",
-    "DLH": "Lufthansa", "CLH": "Lufthansa CityLine", "EWG": "Eurowings", "GWI": "Germanwings",
-    "CFG": "Condor", "TUI": "TUI fly", "BOX": "AeroLogic", "GEC": "Lufthansa Cargo",
-    "RYR": "Ryanair", "RUK": "Ryanair", "MAY": "Malta Air", "EIN": "Aer Lingus",
-    "KLM": "KLM", "KLC": "KLM Cityhopper", "TRA": "Transavia", "MPH": "Martinair",
-    "SWR": "Swiss International Air Lines", "EDW": "Edelweiss Air",
-    "AUA": "Austrian Airlines", "BEL": "Brussels Airlines", "LGL": "Luxair",
-    "IBE": "Iberia", "IBS": "Iberia Express", "VLG": "Vueling", "AEA": "Air Europa", "VOE": "Volotea",
-    "TAP": "TAP Air Portugal", "ITY": "ITA Airways", "AZA": "Alitalia", "NOZ": "Neos", "BPA": "Blue Panorama",
-    "SAS": "SAS Scandinavian Airlines", "NAX": "Norwegian", "NSZ": "Norwegian",
-    "FIN": "Finnair", "ICE": "Icelandair", "WZZ": "Wizz Air", "WMT": "Wizz Air",
-    "LOT": "LOT Polish Airlines", "CSA": "Czech Airlines", "TVS": "Smartwings",
-    "BTI": "airBaltic", "ASL": "Air Serbia", "CTN": "Croatia Airlines", "ROT": "TAROM",
-    "AEE": "Aegean Airlines", "OAL": "Olympic Air",
-    "THY": "Turkish Airlines", "PGT": "Pegasus Airlines", "SXS": "SunExpress",
-    "UAE": "Emirates", "QTR": "Qatar Airways", "ETD": "Etihad Airways",
-    "SVA": "Saudia", "GFA": "Gulf Air", "OMA": "Oman Air", "KAC": "Kuwait Airways",
-    "RJA": "Royal Jordanian", "MEA": "Middle East Airlines", "ELY": "El Al",
-    "RAM": "Royal Air Maroc", "DAH": "Air Algérie", "TAR": "Tunisair", "MSR": "EgyptAir",
-    "ETH": "Ethiopian Airlines", "KQA": "Kenya Airways", "SAA": "South African Airways",
-    "MAU": "Air Mauritius", "REU": "Air Austral",
-    "AAL": "American Airlines", "DAL": "Delta Air Lines", "UAL": "United Airlines",
-    "JBU": "JetBlue", "ACA": "Air Canada", "TSC": "Air Transat", "WJA": "WestJet",
-    "AMX": "Aeromexico", "AVA": "Avianca", "LAN": "LATAM Airlines", "TAM": "LATAM Brasil",
-    "ANA": "All Nippon Airways", "JAL": "Japan Airlines", "KAL": "Korean Air", "AAR": "Asiana Airlines",
-    "CPA": "Cathay Pacific", "SIA": "Singapore Airlines", "TGW": "Scoot", "SLK": "SilkAir",
-    "THA": "Thai Airways", "EVA": "EVA Air",
-    "CAL": "China Airlines", "CCA": "Air China", "CES": "China Eastern Airlines",
-    "CSN": "China Southern Airlines", "CHH": "Hainan Airlines", "CXA": "XiamenAir",
-    "AIC": "Air India", "VTI": "Vistara", "IGO": "IndiGo", "PIA": "Pakistan International Airlines",
-    "HVN": "Vietnam Airlines", "MAS": "Malaysia Airlines", "AXM": "AirAsia", "GIA": "Garuda Indonesia",
-    "QFA": "Qantas", "JST": "Jetstar", "ANZ": "Air New Zealand",
-    "FDX": "FedEx Express", "UPS": "UPS Airlines", "BCS": "DHL", "GTI": "Atlas Air", "CLX": "Cargolux"
-}
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-    "Origin": "https://www.flightradar24.com",
-    "Referer": "https://www.flightradar24.com/"
-}
-
-base_avions = {}
-if os.path.exists(FICHIER_CSV):
-    with open(FICHIER_CSV, mode="r", encoding="utf-8-sig") as f:
-        for ligne in csv.DictReader(f):
-            code = ligne["icao"].strip().upper()
-            if code not in base_avions or ligne.get("is_variant") == "0":
-                base_avions[code] = {k.strip(): (v.strip() if v else "") for k, v in ligne.items() if k}
-
-print(f"✅ Base CSV chargée ({len(base_avions)} modèles)")
-
-cache_photos = {}
-photos_en_cours = set()
-cache_details_vol = {}
-details_en_cours = set()
-historique_zones = {z: [] for z in AEROPORTS_PRESETS}
-derniere_activite_zone = {z: 0.0 for z in AEROPORTS_PRESETS}
-derniere_activite_zone[ZONE_DEFAUT] = time.time()
-
-etats_radars = {
-    z: {
-        "statut": "vide",
-        "maj_serveur": "",
-        "zone_id": z,
-        "zone": cfg["nom"],
-        "nb_avions": 0,
-        "liste_avions": [],
-        "historique": []
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radar Approche — Temps Réel</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-dark: #070b14;
+      --panel-bg: rgba(9, 14, 26, 0.78);
+      --panel-border: rgba(148, 163, 184, 0.22);
+      --accent: #38bdf8;
+      --gold: #f59e0b;
+      --live: #10b981;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
     }
-    for z, cfg in AEROPORTS_PRESETS.items()
-}
 
-verrou = threading.Lock()
-evenement_scan = threading.Event()
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-def distance_km(lat1, lon1, lat2, lon2):
-    R = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lon2 - lon1)
-    a = math.sin(dp / 2)**2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2)**2
-    return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 2)
-
-def calculer_progression_vol(orig_code, dest_code, lat_ac, lon_ac):
-    if orig_code in COORDS_AEROPORTS and dest_code in COORDS_AEROPORTS and orig_code != dest_code:
-        lat1, lon1 = COORDS_AEROPORTS[orig_code]
-        lat2, lon2 = COORDS_AEROPORTS[dest_code]
-        dist_totale = distance_km(lat1, lon1, lat2, lon2)
-        if dist_totale > 5:
-            dist_restante = distance_km(lat_ac, lon_ac, lat2, lon2)
-            pct = max(2, min(98, round((1.0 - (dist_restante / dist_totale)) * 100)))
-            return {
-                "pct": pct,
-                "dist_totale_km": round(dist_totale),
-                "dist_restante_km": round(dist_restante)
-            }
-    return None
-
-def formater_aeroport(code_iata):
-    code = str(code_iata or "").strip().upper()
-    if not code:
-        return None
-    nom = AEROPORTS_IATA.get(code)
-    return {"code": code, "nom": f"{nom} ({code})" if nom else code}
-
-def detecter_rarete(icao, indicatif):
-    if icao in AVIONS_RARES_ICAO:
-        return AVIONS_RARES_ICAO[icao]
-    if indicatif.startswith(("AIB", "BGA")):
-        return "VOL D'ESSAI / CONSTRUCTEUR AIRBUS"
-    return ""
-
-def enregistrer_historique(zone_id, vol, specs, heure):
-    hist = historique_zones.setdefault(zone_id, [])
-    modele_court = (specs.get("model") or vol["icao"]).strip()
-    entree = {
-        "hex": vol["hex"],
-        "indicatif": vol["num_vol"] or vol["indicatif"],
-        "compagnie": vol["compagnie"] or "",
-        "modele": modele_court,
-        "icao": vol["icao"],
-        "heure": heure[:5],
-        "rare": bool(vol["badge_rare"])
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      height: 100vh;
+      overflow: hidden;
     }
-    if hist and hist[0]["hex"] == vol["hex"]:
-        hist[0].update(entree)
-        return list(hist)
 
-    hist[:] = [item for item in hist if item["hex"] != vol["hex"]]
-    hist.insert(0, entree)
-    del hist[6:]
-    return list(hist)
+    .backdrop-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-size: cover;
+      background-position: 62% 40%;
+      transition: opacity 0.45s ease-in-out;
+      filter: brightness(0.86) contrast(1.05) saturate(1.08);
+      opacity: 0;
+    }
+    .backdrop-layer.visible { opacity: 1; }
 
-def charger_details_vol_asynchrone(fr24_id):
-    try:
-        url = f"https://data-live.flightradar24.com/clickhandler/?version=1.5&flight={fr24_id}"
-        r = requests.get(url, headers=HEADERS, timeout=3.5, verify=False)
-        if r.status_code == 200:
-            data = r.json()
-            ac = data.get("aircraft") or {}
-            age_txt = str(ac.get("age") or "").strip()
-            if not age_txt and ac.get("deliveryDate"):
-                try:
-                    annee = int(str(ac["deliveryDate"])[:4])
-                    ans = max(0, datetime.now().year - annee)
-                    age_txt = f"{ans} an{'s' if ans > 1 else ''}"
-                except Exception:
-                    pass
+    .backdrop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background:
+        radial-gradient(circle at 20% 85%, rgba(7, 11, 20, 0.92) 0%, rgba(7, 11, 20, 0.52) 45%, rgba(7, 11, 20, 0.10) 85%),
+        linear-gradient(to top, rgba(7, 11, 20, 0.85) 0%, rgba(7, 11, 20, 0.05) 55%);
+    }
 
-            times = data.get("time") or {}
-            est = times.get("estimated") or {}
-            sched = times.get("scheduled") or {}
-            eta_ts = est.get("arrival") or sched.get("arrival")
+    .main-stage {
+      position: relative;
+      z-index: 2;
+      height: 100vh;
+      padding: 1.6rem 2.2rem 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
 
-            infos = {
-                "age": age_txt,
-                "eta_ts": int(eta_ts) if eta_ts else None,
-                "ts_maj": time.time()
-            }
-            cache_details_vol[fr24_id] = infos
-            with verrou:
-                for etat in etats_radars.values():
-                    if etat.get("vol", {}).get("fr24_id") == fr24_id:
-                        etat["vol"]["age"] = infos["age"]
-                        etat["vol"]["eta_ts"] = infos["eta_ts"]
-                    for item in etat.get("liste_avions", []):
-                        if item.get("vol", {}).get("fr24_id") == fr24_id:
-                            item["vol"]["age"] = infos["age"]
-                            item["vol"]["eta_ts"] = infos["eta_ts"]
-    except Exception:
-        pass
-    finally:
-        details_en_cours.discard(fr24_id)
+    /* --- BARRE SUPÉRIEURE & MODE ÉCRAN DE VEILLE --- */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
 
-def obtenir_details_vol(fr24_id):
-    if not fr24_id:
-        return {}
-    cached = cache_details_vol.get(fr24_id)
-    if cached and (time.time() - cached.get("ts_maj", 0)) < 120:
-        return cached
-    if fr24_id not in details_en_cours and len(details_en_cours) < 6:
-        details_en_cours.add(fr24_id)
-        threading.Thread(target=charger_details_vol_asynchrone, args=(fr24_id,), daemon=True).start()
-    return cached or {}
+    body.idle-mode .top-bar {
+      opacity: 0;
+      transform: translateY(-14px);
+      pointer-events: none;
+    }
 
-def charger_photo_asynchrone(cle, immat, hex_code, modele, compagnie):
-    try:
-        res = None
-        urls = []
-        if immat and immat != "N/A":
-            urls.append(f"https://api.planespotters.net/pub/photos/reg/{immat}")
-        if hex_code:
-            urls.append(f"https://api.planespotters.net/pub/photos/hex/{hex_code}")
+    body.idle-mode {
+      cursor: none;
+    }
 
-        for u in urls:
-            try:
-                r = requests.get(u, timeout=2.5, verify=False)
-                if r.status_code == 200:
-                    photos = r.json().get("photos", [])
-                    if photos:
-                        p0 = photos[0]
-                        src = (p0.get("thumbnail_large") or {}).get("src") or (p0.get("thumbnail") or {}).get("src")
-                        if src:
-                            res = {"url": src, "auteur": f"{p0.get('photographer', 'Spotter')} • {immat or hex_code.upper()} (Planespotters)"}
-                            break
-            except Exception:
-                pass
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
 
-        if not res and compagnie and modele:
-            try:
-                q = urllib.parse.quote(f"{compagnie} {modele} -cabin -interior -cockpit -logo")
-                u = (
-                    f"https://commons.wikimedia.org/w/api.php?action=query&generator=search"
-                    f"&gsrsearch=filetype:bitmap+{q}&gsrnamespace=6&gsrlimit=5"
-                    f"&prop=imageinfo&iiprop=url|size|user&iiurlwidth=1920&format=json"
-                )
-                r = requests.get(u, headers={"User-Agent": "RadarApp/1.0"}, timeout=3.0, verify=False)
-                if r.status_code == 200:
-                    for page in r.json().get("query", {}).get("pages", {}).values():
-                        info = page.get("imageinfo", [{}])[0]
-                        w, h = info.get("width", 0), info.get("height", 0)
-                        img_u = info.get("thumburl") or info.get("url")
-                        if img_u and w >= 1000 and w > h * 1.15 and not img_u.lower().endswith((".svg", ".pdf", ".tif")):
-                            res = {"url": img_u, "auteur": f"{info.get('user', 'Wikimedia')} • {compagnie}"}
-                            break
-            except Exception:
-                pass
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
 
-        if res:
-            cache_photos[cle] = res
-            with verrou:
-                for etat in etats_radars.values():
-                    if etat.get("vol", {}).get("hex") == hex_code:
-                        etat["photo"] = res
-                    for item in etat.get("liste_avions", []):
-                        if item.get("vol", {}).get("hex") == hex_code:
-                            item["photo"] = res
-    finally:
-        photos_en_cours.discard(cle)
+    /* --- MENU DÉROULANT AÉROPORT SUR MESURE --- */
+    .airport-dropdown {
+      position: relative;
+      z-index: 30;
+    }
 
-def obtenir_photo(immat, hex_code, modele, compagnie):
-    cle = f"{hex_code}_{immat}_{modele}"
-    if cle in cache_photos:
-        return cache_photos[cle]
-    if cle not in photos_en_cours and len(photos_en_cours) < 10:
-        photos_en_cours.add(cle)
-        threading.Thread(target=charger_photo_asynchrone, args=(cle, immat, hex_code, modele, compagnie), daemon=True).start()
-    return None
+    .airport-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(11, 18, 34, 0.86);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      backdrop-filter: blur(16px);
+      color: var(--text-main);
+      padding: 0.36rem 0.85rem 0.36rem 0.45rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
 
-def interroger_flightradar24(zone_cfg):
-    lat, lon, rayon = zone_cfg["lat"], zone_cfg["lon"], zone_cfg["rayon"]
-    dlat = rayon / 111.0
-    dlon = rayon / (111.0 * math.cos(math.radians(lat)))
-    bounds = f"{lat + dlat:.4f},{lat - dlat:.4f},{lon - dlon:.4f},{lon + dlon:.4f}"
-    url = (
-        f"https://data-cloud.flightradar24.com/zones/fcgi/feed.js"
-        f"?bounds={bounds}&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=0&maxage=14400&gliders=0&stats=0"
-    )
-    t0 = time.time()
-    r = requests.get(url, headers=HEADERS, timeout=4.0, verify=False)
-    ms = round((time.time() - t0) * 1000)
-    if r.status_code != 200:
-        raise ValueError(f"FR24 HTTP {r.status_code}")
+    .airport-trigger:hover,
+    .airport-dropdown.open .airport-trigger {
+      border-color: var(--accent);
+      background: rgba(15, 23, 42, 0.95);
+      box-shadow: 0 0 22px rgba(56, 189, 248, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
 
-    data = r.json()
-    avions = []
-    for k, v in data.items():
-        if not isinstance(v, list) or len(v) < 17:
-            continue
-        alt = int(v[4] or 0)
-        if alt <= 0:
-            continue
-        lat_ac, lon_ac = float(v[1]), float(v[2])
-        dist = distance_km(lat, lon, lat_ac, lon_ac)
-        if dist > rayon:
-            continue
+    .trigger-iata {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #070b14;
+      background: linear-gradient(135deg, #38bdf8, #7dd3fc);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+    }
 
-        fr24_id = str(k).strip()
-        hex_code = str(v[0] or "").strip().lower()
-        cap = int(v[3] or 0)
-        spd = int(v[5] or 0)
-        squawk = str(v[6] or "").strip()
-        icao = str(v[8] or "").strip().upper()
-        immat = str(v[9] or "").strip().upper()
-        origine = formater_aeroport(v[11])
-        destination = formater_aeroport(v[12])
-        num_vol = str(v[13] or "").strip().upper()
-        vario = int(v[15] or 0)
-        indicatif = str(v[16] or "").strip() or num_vol or immat or hex_code.upper()
-        compagnie_code = str(v[18] or "").strip().upper() if len(v) > 18 else indicatif[:3].upper()
-        compagnie = COMPAGNIES_ICAO.get(compagnie_code) or COMPAGNIES_ICAO.get(indicatif[:3].upper(), "")
-        badge_rare = detecter_rarete(icao, indicatif)
-        phase = "EN APPROCHE" if vario < -150 or alt < 4500 else ("MONTÉE" if vario > 250 else "PALIER")
-        progression = calculer_progression_vol(
-            origine["code"] if origine else "",
-            destination["code"] if destination else "",
-            lat_ac,
-            lon_ac
-        )
-        details = cache_details_vol.get(fr24_id, {})
+    .trigger-name {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #f8fafc;
+    }
 
-        avions.append({
-            "fr24_id": fr24_id,
-            "hex": hex_code,
-            "indicatif": indicatif,
-            "num_vol": num_vol,
-            "compagnie": compagnie,
-            "immat": immat or "N/A",
-            "icao": icao or "—",
-            "squawk": squawk,
-            "badge_rare": badge_rare,
-            "phase": phase,
-            "origine": origine,
-            "destination": destination,
-            "progression": progression,
-            "age": details.get("age", ""),
-            "eta_ts": details.get("eta_ts"),
-            "lat": lat_ac,
-            "lon": lon_ac,
-            "altitude_ft": alt,
-            "vitesse_kts": spd,
-            "cap": cap,
-            "taux_vertical": vario,
-            "distance_km": dist
-        })
-    return avions, ms
+    .trigger-chevron {
+      width: 15px;
+      height: 15px;
+      color: var(--accent);
+      transition: transform 0.22s ease;
+    }
 
-def actualiser_zone(zone_id):
-    zone_cfg = AEROPORTS_PRESETS[zone_id]
-    heure = datetime.now().strftime("%H:%M:%S")
-    try:
-        candidats, ms = interroger_flightradar24(zone_cfg)
-        if candidats:
-            candidats.sort(key=lambda x: x["distance_km"])
-            liste_enrichie = []
-            for idx, av in enumerate(candidats):
-                sp = dict(base_avions.get(av["icao"], {}))
-                nom_complet = f"{sp.get('manufacturer', '')} {sp.get('model', av['icao'])}".strip()
-                ph = obtenir_photo(av["immat"], av["hex"], nom_complet, av["compagnie"]) if idx < 8 else cache_photos.get(f"{av['hex']}_{av['immat']}_{nom_complet}")
-                if idx == 0:
-                    det = obtenir_details_vol(av["fr24_id"])
-                    if det.get("age"):
-                        av["age"] = det["age"]
-                    if det.get("eta_ts"):
-                        av["eta_ts"] = det["eta_ts"]
-                liste_enrichie.append({
-                    "vol": av,
-                    "specs": sp,
-                    "photo": ph
-                })
+    .airport-dropdown.open .trigger-chevron {
+      transform: rotate(180deg);
+    }
 
-            principal = liste_enrichie[0]
-            with verrou:
-                hist_maj = enregistrer_historique(zone_id, principal["vol"], principal["specs"], heure)
-                etats_radars[zone_id] = {
-                    "statut": "actif",
-                    "maj_serveur": heure,
-                    "source_api": "FR24",
-                    "zone_id": zone_id,
-                    "zone": zone_cfg["nom"],
-                    "nb_avions": len(candidats),
-                    "vol": principal["vol"],
-                    "specs": principal["specs"],
-                    "photo": principal["photo"],
-                    "liste_avions": liste_enrichie,
-                    "historique": hist_maj
-                }
-        else:
-            with verrou:
-                etats_radars[zone_id] = {
-                    "statut": "vide",
-                    "maj_serveur": heure,
-                    "zone_id": zone_id,
-                    "zone": zone_cfg["nom"],
-                    "nb_avions": 0,
-                    "liste_avions": [],
-                    "historique": list(historique_zones.get(zone_id, []))
-                }
-    except Exception as e:
-        print(f"❌ [{heure}] Erreur FR24 ({zone_id}) : {type(e).__name__}: {e}")
+    .airport-menu {
+      position: absolute;
+      top: calc(100% + 0.55rem);
+      left: 0;
+      min-width: 305px;
+      background: rgba(9, 14, 26, 0.94);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 0.45rem;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px) scale(0.98);
+      transform-origin: top left;
+      transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+    }
 
-def boucle_radar():
-    while True:
-        debut = time.time()
-        evenement_scan.clear()
-        maintenant = time.time()
+    .airport-dropdown.open .airport-menu {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
 
-        with verrou:
-            zones_actives = [
-                z for z, ts in derniere_activite_zone.items()
-                if (maintenant - ts) <= DUREE_ACTIVITE_ZONE_SEC
-            ]
-        if not zones_actives:
-            zones_actives = [ZONE_DEFAUT]
+    .menu-header {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding: 0.35rem 0.65rem 0.45rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      margin-bottom: 0.3rem;
+    }
 
-        threads = []
-        for z in zones_actives:
-            t = threading.Thread(target=actualiser_zone, args=(z,), daemon=True)
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join()
+    .airport-option {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 0.55rem 0.65rem;
+      color: var(--text-main);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
 
-        ecoule = time.time() - debut
-        attente = max(0.5, INTERVALLE_SCAN_SEC - ecoule)
-        evenement_scan.wait(timeout=attente)
+    .airport-option:hover {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.25);
+    }
 
-class RadarHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass
+    .airport-option.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.45);
+    }
 
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        params = urllib.parse.parse_qs(parsed.query)
+    .opt-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
 
-        if parsed.path == "/api/zone":
-            nouvelle_zone = params.get("id", [""])[0].strip().upper()
-            if nouvelle_zone in AEROPORTS_PRESETS:
-                with verrou:
-                    etats_radars[nouvelle_zone]["maj_serveur"] = datetime.now().strftime("%H:%M:%S")
-                    etats_radars[nouvelle_zone]["historique"] = list(historique_zones.get(nouvelle_zone, []))
-                    derniere_activite_zone[nouvelle_zone] = time.time()
-                evenement_scan.set()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"ok": True, "zone_id": nouvelle_zone}).encode("utf-8"))
+    .opt-iata {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.22rem 0.48rem;
+      border-radius: 6px;
+      min-width: 44px;
+      text-align: center;
+    }
 
-        elif parsed.path == "/api/trafic":
-            zone_req = params.get("zone", [ZONE_DEFAUT])[0].strip().upper()
-            hex_cible = params.get("hex", [""])[0].strip().lower()
-            if zone_req not in AEROPORTS_PRESETS:
-                zone_req = ZONE_DEFAUT
+    .airport-option.active .opt-iata {
+      background: var(--accent);
+      color: #070b14;
+      border-color: var(--accent);
+    }
 
-            declencher = False
-            with verrou:
-                derniere_activite_zone[zone_req] = time.time()
-                etat = dict(etats_radars[zone_req])
-                if not etat.get("maj_serveur"):
-                    declencher = True
+    .opt-info {
+      display: flex;
+      flex-direction: column;
+    }
 
-                if hex_cible and etat.get("liste_avions"):
-                    trouve = next((item for item in etat["liste_avions"] if item["vol"]["hex"] == hex_cible), None)
-                    if trouve:
-                        v = dict(trouve["vol"])
-                        s = trouve["specs"]
-                        photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
-                        if photo:
-                            trouve["photo"] = photo
-                        det = obtenir_details_vol(v.get("fr24_id"))
-                        if det.get("age"):
-                            v["age"] = det["age"]
-                        if det.get("eta_ts"):
-                            v["eta_ts"] = det["eta_ts"]
-                        etat["vol"] = v
-                        etat["specs"] = s
-                        etat["photo"] = trouve["photo"]
-                        etat["verrouille"] = True
-                    else:
-                        etat["verrouille"] = False
-                elif etat.get("statut") == "actif":
-                    v = dict(etat["vol"])
-                    s = etat.get("specs", {})
-                    photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
-                    if photo:
-                        etat["photo"] = photo
-                    det = obtenir_details_vol(v.get("fr24_id"))
-                    if det.get("age"):
-                        v["age"] = det["age"]
-                    if det.get("eta_ts"):
-                        v["eta_ts"] = det["eta_ts"]
-                    etat["vol"] = v
-                    etat["verrouille"] = False
+    .opt-city {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: #f8fafc;
+    }
 
-                payload = json.dumps(etat).encode("utf-8")
+    .opt-sub {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+    }
 
-            if declencher:
-                evenement_scan.set()
+    .opt-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: transparent;
+      flex-shrink: 0;
+    }
 
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(payload)
-        else:
-            super().do_GET()
+    .airport-option.active .opt-dot {
+      background: var(--live);
+      box-shadow: 0 0 8px var(--live);
+    }
 
-RadarHandler.extensions_map.update({
-    ".json": "application/manifest+json",
-    ".svg": "image/svg+xml",
-})
+    .airport-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(12px);
+      padding: 0.42rem 0.9rem;
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #e2e8f0;
+    }
 
-threading.Thread(target=boucle_radar, daemon=True).start()
-print(f"🚀 Radar multi-zones actif sur le port {PORT}")
-ThreadingHTTPServer(("0.0.0.0", PORT), RadarHandler).serve_forever()
+    .live-clock {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.16);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 0.4rem 0.85rem;
+      border-radius: 999px;
+    }
+
+    .traffic-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      background: rgba(11, 18, 34, 0.86);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      backdrop-filter: blur(14px);
+      padding: 0.42rem 0.92rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .traffic-pill:hover {
+      border-color: var(--accent);
+      background: rgba(15, 23, 42, 0.96);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.22);
+    }
+
+    .traffic-pill svg {
+      width: 14px;
+      height: 14px;
+      color: var(--accent);
+    }
+
+    .lock-pill {
+      display: none;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: #fde68a;
+      background: rgba(245, 158, 11, 0.22);
+      border: 1px solid rgba(251, 191, 36, 0.65);
+      backdrop-filter: blur(12px);
+      padding: 0.4rem 0.85rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .lock-pill.visible {
+      display: inline-flex;
+    }
+
+    .lock-pill:hover {
+      background: rgba(245, 158, 11, 0.35);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      box-shadow: 0 0 10px var(--live);
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.45); opacity: 0.45; }
+    }
+
+    /* --- VOLET LATÉRAL TOUR DE CONTRÔLE (DRAWER) --- */
+    .atc-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(3, 6, 14, 0.55);
+      backdrop-filter: blur(3px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+
+    .atc-backdrop.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .atc-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 50;
+      width: 390px;
+      max-width: 92vw;
+      background: rgba(8, 13, 24, 0.94);
+      border-left: 1px solid rgba(56, 189, 248, 0.28);
+      backdrop-filter: blur(24px);
+      box-shadow: -20px 0 50px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(102%);
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .atc-drawer.open {
+      transform: translateX(0);
+    }
+
+    .atc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.2rem 1.35rem 1rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .atc-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.18rem;
+    }
+
+    .atc-kicker {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+    }
+
+    .atc-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.12rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .atc-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      color: var(--text-main);
+      font-size: 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.18s ease;
+    }
+
+    .atc-close:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--accent);
+    }
+
+    .atc-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.85rem 1.15rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .atc-card {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 12px;
+      padding: 0.75rem 0.9rem;
+      text-align: left;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .atc-card:hover {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.42);
+      transform: translateX(-2px);
+    }
+
+    .atc-card.selected {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: var(--accent);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.16);
+    }
+
+    .atc-card.is-rare {
+      border-color: rgba(251, 191, 36, 0.45);
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(15, 23, 42, 0.82));
+    }
+
+    .atc-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .atc-callsign {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .atc-card.is-rare .atc-callsign {
+      color: #fde68a;
+    }
+
+    .atc-dist {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      background: rgba(7, 11, 20, 0.75);
+      padding: 0.16rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      flex-shrink: 0;
+    }
+
+    .atc-model {
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+
+    .atc-sub {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .atc-rare-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.64rem;
+      font-weight: 700;
+      color: #fde68a;
+    }
+
+    /* --- ZONE INFÉRIEURE : HUD GAUCHE + FRISE HISTORIQUE DROITE --- */
+    .bottom-dock {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .bottom-left-hud {
+      max-width: 720px;
+      width: 100%;
+      flex-shrink: 1;
+    }
+
+    .rare-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.28), rgba(217, 119, 6, 0.16));
+      border: 1px solid rgba(251, 191, 36, 0.7);
+      color: #fde68a;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 0.3rem 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 0.45rem;
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.25);
+    }
+
+    .rare-banner:empty {
+      display: none;
+    }
+
+    .bottom-left-hud.is-rare .metric-card.is-live {
+      border-color: rgba(251, 191, 36, 0.5);
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.14);
+    }
+
+    .airline-badge {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.25rem;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+    }
+
+    .callsign-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.84rem;
+      background: rgba(56, 189, 248, 0.22);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      color: #e0f2fe;
+      padding: 0.16rem 0.58rem;
+      border-radius: 6px;
+    }
+
+    .phase-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 700;
+      background: rgba(16, 185, 129, 0.22);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      color: #6ee7b7;
+      padding: 0.16rem 0.55rem;
+      border-radius: 6px;
+    }
+
+    .aircraft-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2rem, 3.6vw, 3.1rem);
+      font-weight: 700;
+      line-height: 1.06;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.65rem;
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.85);
+    }
+
+    /* --- FRISE DE TRAJET GRAPHIQUE COMPACTE --- */
+    .route-banner {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.85rem;
+      max-width: 550px;
+      width: 100%;
+      background: rgba(11, 18, 34, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.32);
+      backdrop-filter: blur(14px);
+      padding: 0.48rem 0.85rem;
+      border-radius: 11px;
+      margin-bottom: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .route-banner:empty {
+      display: none;
+    }
+
+    .route-airport {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      max-width: 36%;
+    }
+
+    .route-airport.dest {
+      text-align: right;
+      align-items: flex-end;
+    }
+
+    .route-tag {
+      font-size: 0.56rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+    }
+
+    .route-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #f8fafc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .route-track-wrap {
+      flex: 1;
+      min-width: 95px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.28rem;
+    }
+
+    .route-track-meta {
+      font-size: 0.58rem;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+
+    .route-track {
+      position: relative;
+      width: 100%;
+      height: 2.5px;
+      background: rgba(148, 163, 184, 0.24);
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+    }
+
+    .route-track::before,
+    .route-track::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .route-track::before { left: 0; }
+    .route-track::after { right: 0; background: rgba(148, 163, 184, 0.6); }
+
+    .route-track-fill {
+      height: 100%;
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.45), #38bdf8);
+      border-radius: 999px;
+      transition: width 0.6s ease;
+    }
+
+    .route-plane-icon {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 19px;
+      height: 19px;
+      border-radius: 50%;
+      background: #070b14;
+      border: 1.5px solid var(--accent);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #f8fafc;
+      font-size: 0.64rem;
+      transition: left 0.6s ease;
+    }
+
+    .aircraft-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .meta-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      background: rgba(9, 14, 26, 0.84);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(10px);
+      padding: 0.28rem 0.65rem;
+      border-radius: 7px;
+      color: #e2e8f0;
+    }
+
+    /* --- SÉPARATEUR SUBTIL : DONNÉES LIVE VS FICHE CONSTRUCTEUR --- */
+    .telemetry-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      max-width: 720px;
+      margin-bottom: 0.45rem;
+    }
+
+    .live-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.6rem;
+    }
+
+    .metric-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(14px);
+      border-radius: 12px;
+      padding: 0.68rem 0.85rem;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .metric-card.is-live {
+      background: rgba(11, 18, 34, 0.86);
+      border-color: rgba(56, 189, 248, 0.34);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(56, 189, 248, 0.12);
+    }
+
+    .metric-card.is-live .metric-label {
+      color: #bae6fd;
+    }
+
+    .specs-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin: 0.1rem 0 -0.05rem;
+    }
+
+    .specs-divider:empty {
+      display: none;
+    }
+
+    .specs-divider-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(148, 163, 184, 0.72);
+      white-space: nowrap;
+    }
+
+    .specs-divider-line {
+      height: 1px;
+      flex: 1;
+      background: linear-gradient(90deg, rgba(148, 163, 184, 0.24), transparent);
+    }
+
+    .specs-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.55rem;
+    }
+
+    .specs-cards-grid.cols-2 {
+      grid-template-columns: repeat(2, 1fr);
+      max-width: 355px;
+    }
+
+    .specs-cards-grid:empty {
+      display: none;
+    }
+
+    .metric-card.is-spec {
+      background: rgba(7, 11, 20, 0.66);
+      border-color: rgba(148, 163, 184, 0.15);
+      padding: 0.55rem 0.8rem;
+    }
+
+    .metric-card.is-spec .metric-value {
+      font-size: 0.96rem;
+      color: #cbd5e1;
+    }
+
+    .metric-label {
+      font-size: 0.66rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.2rem;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.06rem;
+      font-weight: 700;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+
+    .metric-unit {
+      font-size: 0.72rem;
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-left: 0.16rem;
+    }
+
+    .photo-credit {
+      display: inline-block;
+      font-size: 0.72rem;
+      color: #cbd5e1;
+      background: rgba(7, 11, 20, 0.75);
+      padding: 0.26rem 0.72rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      margin-top: 0.25rem;
+    }
+    .photo-credit:empty { display: none; }
+
+    /* --- FRISE HORIZONTALE DES 5 DERNIERS AVIONS (BAS À DROITE) --- */
+    .recent-strip-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
+      flex-shrink: 0;
+      opacity: 0.85;
+      transition: opacity 0.25s ease;
+    }
+
+    .recent-strip-wrapper:hover {
+      opacity: 1;
+    }
+
+    .recent-strip-wrapper:empty {
+      display: none;
+    }
+
+    .recent-strip-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(148, 163, 184, 0.85);
+      padding-right: 0.2rem;
+    }
+
+    .recent-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .recent-item {
+      background: rgba(9, 14, 26, 0.68);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      backdrop-filter: blur(10px);
+      border-radius: 9px;
+      padding: 0.38rem 0.62rem;
+      min-width: 96px;
+      max-width: 118px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.12rem;
+    }
+
+    .recent-item.is-rare {
+      border-color: rgba(251, 191, 36, 0.45);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .recent-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.35rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+
+    .recent-item.is-rare .recent-top {
+      color: #fde68a;
+    }
+
+    .recent-time {
+      font-size: 0.6rem;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    .recent-model {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 1180px) {
+      .recent-strip-wrapper { display: none; }
+    }
+
+    /* --- ADAPTATION MOBILE (<= 768px UNIQUEMENT) --- */
+    @media (max-width: 768px) {
+      body {
+        height: auto;
+        min-height: 100dvh;
+        overflow-y: auto;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .backdrop-layer {
+        background-position: 50% 28%;
+      }
+
+      .backdrop-overlay {
+        background:
+          linear-gradient(
+            to bottom,
+            rgba(7, 11, 20, 0.72) 0%,
+            rgba(7, 11, 20, 0.08) 28%,
+            rgba(7, 11, 20, 0.65) 54%,
+            rgba(7, 11, 20, 0.96) 76%
+          );
+      }
+
+      .main-stage {
+        height: auto;
+        min-height: 100dvh;
+        padding:
+          calc(0.9rem + env(safe-area-inset-top))
+          1rem
+          calc(1.25rem + env(safe-area-inset-bottom));
+        gap: 1.5rem;
+      }
+
+      .top-bar {
+        gap: 0.5rem;
+      }
+
+      .top-left,
+      .top-right {
+        width: 100%;
+        justify-content: space-between;
+        gap: 0.45rem;
+      }
+
+      .airport-dropdown {
+        flex: 1 1 auto;
+      }
+
+      .airport-trigger {
+        width: 100%;
+        justify-content: space-between;
+        padding: 0.45rem 0.85rem 0.45rem 0.5rem;
+      }
+
+      .trigger-name {
+        font-size: 0.86rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .airport-menu {
+        width: calc(100vw - 2rem);
+        min-width: unset;
+        max-height: 65dvh;
+        overflow-y: auto;
+      }
+
+      .airport-option {
+        padding: 0.68rem 0.7rem;
+      }
+
+      .live-clock {
+        font-size: 0.78rem;
+        padding: 0.42rem 0.72rem;
+      }
+
+      .airport-tag,
+      .traffic-pill,
+      .lock-pill {
+        font-size: 0.74rem;
+        padding: 0.36rem 0.75rem;
+      }
+
+      .bottom-dock {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+        margin-top: auto;
+        padding-top: 22vh;
+      }
+
+      .rare-banner {
+        display: flex;
+        font-size: 0.74rem;
+        padding: 0.38rem 0.75rem;
+        line-height: 1.35;
+      }
+
+      .airline-badge {
+        font-size: 1rem;
+        gap: 0.45rem;
+      }
+
+      .aircraft-title {
+        font-size: clamp(1.75rem, 7.5vw, 2.35rem);
+        margin-bottom: 0.6rem;
+      }
+
+      .route-banner {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        max-width: 100%;
+        gap: 0.5rem;
+        padding: 0.6rem 0.85rem;
+      }
+
+      .route-airport {
+        max-width: 100%;
+      }
+
+      .route-airport.dest {
+        text-align: left;
+        align-items: flex-start;
+      }
+
+      .route-name {
+        font-size: 0.86rem;
+      }
+
+      .meta-chip {
+        font-size: 0.76rem;
+        padding: 0.32rem 0.65rem;
+      }
+
+      .live-cards-grid,
+      .specs-cards-grid,
+      .specs-cards-grid.cols-2 {
+        grid-template-columns: repeat(2, 1fr);
+        max-width: 100%;
+        gap: 0.55rem;
+      }
+
+      .metric-card {
+        padding: 0.72rem 0.85rem;
+      }
+
+      .metric-label {
+        font-size: 0.68rem;
+      }
+
+      .metric-value {
+        font-size: 1.12rem;
+      }
+
+      .recent-strip-wrapper {
+        display: flex;
+        align-items: flex-start;
+        width: 100%;
+        opacity: 1;
+      }
+
+      .recent-strip {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+
+      .recent-strip::-webkit-scrollbar {
+        display: none;
+      }
+
+      .recent-item {
+        min-width: 112px;
+        flex-shrink: 0;
+        padding: 0.48rem 0.68rem;
+      }
+    }
+
+    /* --- ÉCRAN DE DÉMARRAGE / RÉVEIL SERVEUR --- */
+    .boot-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background-color: var(--bg-dark);
+      background-image: radial-gradient(circle at 50% 45%, rgba(56, 189, 248, 0.08) 0%, transparent 60%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.4rem;
+      transition: opacity 0.45s ease, visibility 0.45s ease;
+    }
+
+    .boot-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .boot-radar {
+      position: relative;
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(56, 189, 248, 0.35);
+      box-shadow: 0 0 28px rgba(56, 189, 248, 0.15), inset 0 0 16px rgba(56, 189, 248, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .boot-radar::before {
+      content: "";
+      position: absolute;
+      inset: 15px;
+      border-radius: 50%;
+      border: 1px dashed rgba(56, 189, 248, 0.3);
+    }
+
+    .boot-radar::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.42) 0deg, transparent 85deg);
+      animation: radar-sweep 1.8s linear infinite;
+    }
+
+    .boot-center-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      box-shadow: 0 0 10px var(--live);
+      z-index: 1;
+    }
+
+    .boot-text-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      text-align: center;
+      padding: 0 1.5rem;
+    }
+
+    .boot-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text-main);
+    }
+
+    .boot-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      color: var(--accent);
+      opacity: 0.9;
+    }
+
+    @keyframes radar-sweep {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="boot-screen" id="boot-screen">
+    <div class="boot-radar">
+      <div class="boot-center-dot"></div>
+    </div>
+    <div class="boot-text-wrap">
+      <div class="boot-title">INITIALISATION RADAR</div>
+      <div class="boot-sub" id="boot-status">Connexion à la tour de contrôle...</div>
+    </div>
+  </div>
+
+  <div class="backdrop-layer" id="bg-a"></div>
+  <div class="backdrop-layer" id="bg-b"></div>
+  <div class="backdrop-overlay"></div>
+
+  <!-- VOLET LATÉRAL TOUR DE CONTRÔLE -->
+  <div class="atc-backdrop" id="atc-backdrop"></div>
+  <aside class="atc-drawer" id="atc-drawer" aria-label="Trafic aérien de la zone">
+    <div class="atc-header">
+      <div class="atc-title-group">
+        <span class="atc-kicker">TOUR DE CONTRÔLE • SECTEUR</span>
+        <h2 class="atc-title" id="atc-drawer-title">Trafic en zone</h2>
+      </div>
+      <button type="button" class="atc-close" id="atc-close" aria-label="Fermer">✕</button>
+    </div>
+    <div class="atc-list" id="atc-list"></div>
+  </aside>
+
+  <main class="main-stage">
+    <header class="top-bar">
+      <div class="top-left">
+        <div class="airport-dropdown" id="airport-dropdown">
+          <button type="button" class="airport-trigger" id="airport-trigger" aria-expanded="false">
+            <span class="trigger-iata" id="trigger-iata">TLS</span>
+            <span class="trigger-name" id="trigger-name">Toulouse-Blagnac</span>
+            <svg class="trigger-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <div class="airport-menu" id="airport-menu" role="listbox">
+            <div class="menu-header">Sélectionner une zone radar</div>
+            <button type="button" class="airport-option active" data-id="TLS" data-city="Toulouse-Blagnac">
+              <div class="opt-left">
+                <span class="opt-iata">TLS</span>
+                <div class="opt-info">
+                  <span class="opt-city">Toulouse-Blagnac</span>
+                  <span class="opt-sub">France • Pistes 14/32 & Usines Airbus</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="DXB" data-city="Dubaï International">
+              <div class="opt-left">
+                <span class="opt-iata">DXB</span>
+                <div class="opt-info">
+                  <span class="opt-city">Dubaï International</span>
+                  <span class="opt-sub">Émirats • Approche Terre 30L/30R</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="CDG" data-city="Paris-Charles de Gaulle">
+              <div class="opt-left">
+                <span class="opt-iata">CDG</span>
+                <div class="opt-info">
+                  <span class="opt-city">Paris-Charles de Gaulle</span>
+                  <span class="opt-sub">France • Hub International Roissy</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="LHR" data-city="Londres-Heathrow">
+              <div class="opt-left">
+                <span class="opt-iata">LHR</span>
+                <div class="opt-info">
+                  <span class="opt-city">Londres-Heathrow</span>
+                  <span class="opt-sub">Royaume-Uni • Pistes 09/27</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="JFK" data-city="New York-JFK">
+              <div class="opt-left">
+                <span class="opt-iata">JFK</span>
+                <div class="opt-info">
+                  <span class="opt-city">New York-JFK</span>
+                  <span class="opt-sub">États-Unis • Queens, NY</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+
+            <button type="button" class="airport-option" data-id="SIN" data-city="Singapour-Changi">
+              <div class="opt-left">
+                <span class="opt-iata">SIN</span>
+                <div class="opt-info">
+                  <span class="opt-city">Singapour-Changi</span>
+                  <span class="opt-sub">Singapour • Hub Asie-Pacifique</span>
+                </div>
+              </div>
+              <span class="opt-dot"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="airport-tag">
+          <span class="pulse-dot"></span>
+          <span id="status-label">SCAN EN COURS...</span>
+        </div>
+        <div class="live-clock" id="live-clock">--:--:--</div>
+      </div>
+
+      <div class="top-right">
+        <button type="button" class="lock-pill" id="unlock-btn" title="Revenir automatiquement sur l'avion le plus proche">
+          <span>🔒 SUIVI VERROUILLÉ • Direct</span>
+        </button>
+        <button type="button" class="traffic-pill" id="traffic-btn" title="Ouvrir la liste des avions en zone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+          <span id="traffic-count">0 avion en zone</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="bottom-dock">
+      <section class="bottom-left-hud" id="hud-container">
+        <div class="rare-banner" id="rare-banner"></div>
+
+        <div class="airline-badge">
+          <span id="airline-name">RECHERCHE RADAR...</span>
+          <span class="callsign-pill" id="callsign">---</span>
+          <span class="phase-pill" id="flight-phase">SCAN</span>
+        </div>
+
+        <h1 class="aircraft-title" id="aircraft-model">En attente d'un appareil</h1>
+
+        <div class="route-banner" id="route-banner"></div>
+
+        <div class="aircraft-meta" id="specs-chips">
+          <span class="meta-chip">OACI : —</span>
+          <span class="meta-chip">IMMAT : —</span>
+        </div>
+
+        <div class="telemetry-wrapper">
+          <div class="live-cards-grid" id="live-cards-grid">
+            <div class="metric-card is-live">
+              <div class="metric-label">Distance axe</div>
+              <div class="metric-value">—<span class="metric-unit">km</span></div>
+            </div>
+            <div class="metric-card is-live">
+              <div class="metric-label">Altitude</div>
+              <div class="metric-value">—<span class="metric-unit">ft</span></div>
+            </div>
+            <div class="metric-card is-live">
+              <div class="metric-label">Vitesse sol</div>
+              <div class="metric-value">—<span class="metric-unit">kts</span></div>
+            </div>
+            <div class="metric-card is-live">
+              <div class="metric-label">Cap / Vario</div>
+              <div class="metric-value">—<span class="metric-unit">°</span></div>
+            </div>
+          </div>
+
+          <div class="specs-divider" id="specs-divider"></div>
+          <div class="specs-cards-grid" id="specs-cards-grid"></div>
+        </div>
+
+        <div class="photo-credit" id="photo-credit"></div>
+      </section>
+
+      <aside class="recent-strip-wrapper" id="recent-strip-wrapper"></aside>
+    </div>
+  </main>
+
+  <script>
+    let derniereUrlPhoto = "";
+    let coucheActive = "a";
+    let derniereSignature = "";
+    let derniereSigHistorique = "";
+    let zoneCourante = localStorage.getItem("radar_zone_id") || "TLS";
+    let hexVerrouille = "";
+    let timerInactivite = null;
+
+    setInterval(() => {
+      document.getElementById("live-clock").textContent = new Date().toLocaleTimeString("fr-FR");
+    }, 1000);
+
+    // --- VOLET LATÉRAL TOUR DE CONTRÔLE ---
+    const atcDrawer = document.getElementById("atc-drawer");
+    const atcBackdrop = document.getElementById("atc-backdrop");
+    const trafficBtn = document.getElementById("traffic-btn");
+    const atcClose = document.getElementById("atc-close");
+    const unlockBtn = document.getElementById("unlock-btn");
+
+    function ouvrirDrawerATC() {
+      atcDrawer.classList.add("open");
+      atcBackdrop.classList.add("open");
+      reinitialiserInactivite();
+    }
+
+    function fermerDrawerATC() {
+      atcDrawer.classList.remove("open");
+      atcBackdrop.classList.remove("open");
+    }
+
+    trafficBtn.addEventListener("click", ouvrirDrawerATC);
+    atcClose.addEventListener("click", fermerDrawerATC);
+    atcBackdrop.addEventListener("click", fermerDrawerATC);
+
+    unlockBtn.addEventListener("click", () => {
+      hexVerrouille = "";
+      derniereSignature = "";
+      unlockBtn.classList.remove("visible");
+      actualiser();
+    });
+
+    // --- MODE ÉCRAN DE VEILLE / KIOSQUE AUTOMATIQUE ---
+    const dropdown = document.getElementById("airport-dropdown");
+    const trigger = document.getElementById("airport-trigger");
+    const options = document.querySelectorAll(".airport-option");
+
+    function reinitialiserInactivite() {
+      document.body.classList.remove("idle-mode");
+      clearTimeout(timerInactivite);
+      timerInactivite = setTimeout(() => {
+        if (!dropdown.classList.contains("open") && !atcDrawer.classList.contains("open")) {
+          document.body.classList.add("idle-mode");
+        }
+      }, 8000);
+    }
+
+    ["mousemove", "mousedown", "keydown", "touchstart"].forEach(evt => {
+      document.addEventListener(evt, reinitialiserInactivite, { passive: true });
+    });
+    reinitialiserInactivite();
+
+    // --- GESTION DU MENU DÉROULANT PERSONNALISÉ ---
+    function synchroniserDropdown(id) {
+      zoneCourante = id;
+      options.forEach(opt => {
+        const actif = opt.dataset.id === id;
+        opt.classList.toggle("active", actif);
+        if (actif) {
+          document.getElementById("trigger-iata").textContent = id;
+          document.getElementById("trigger-name").textContent = opt.dataset.city;
+        }
+      });
+    }
+
+    synchroniserDropdown(zoneCourante);
+
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ouvert = dropdown.classList.toggle("open");
+      trigger.setAttribute("aria-expanded", ouvert);
+      reinitialiserInactivite();
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!dropdown.contains(e.target)) {
+        dropdown.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        dropdown.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+        fermerDrawerATC();
+      }
+    });
+
+    options.forEach(opt => {
+      opt.addEventListener("click", async () => {
+        const id = opt.dataset.id;
+        dropdown.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+        if (id === zoneCourante) return;
+
+        localStorage.setItem("radar_zone_id", id);
+        hexVerrouille = "";
+        unlockBtn.classList.remove("visible");
+        synchroniserDropdown(id);
+        derniereSignature = "";
+        derniereSigHistorique = "";
+        document.getElementById("status-label").textContent = "CHANGEMENT DE ZONE...";
+        try {
+          await fetch(`/api/zone?id=${encodeURIComponent(id)}`);
+          setTimeout(actualiser, 600);
+        } catch (err) {}
+      });
+    });
+
+    function formaterNombre(n) {
+      if (n === null || n === undefined || n === "" || n === "N/A" || n === "0") return null;
+      const num = Number(n);
+      return Number.isNaN(num) ? String(n) : Math.round(num).toLocaleString("fr-FR");
+    }
+
+    function formaterHeureEta(ts) {
+      if (!ts) return "";
+      try {
+        const d = new Date(Number(ts) * 1000);
+        return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function extraireSpec(s, keys) {
+      for (const k of keys) {
+        if (s[k] && s[k] !== "0" && s[k] !== "N/A") return s[k];
+      }
+      return null;
+    }
+
+    function changerPhoto(nouvelleUrl) {
+      if (nouvelleUrl === derniereUrlPhoto) return;
+      derniereUrlPhoto = nouvelleUrl;
+      const bgA = document.getElementById("bg-a");
+      const bgB = document.getElementById("bg-b");
+      if (!nouvelleUrl) {
+        bgA.classList.remove("visible");
+        bgB.classList.remove("visible");
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        if (coucheActive === "a") {
+          bgB.style.backgroundImage = `url("${nouvelleUrl}")`;
+          bgB.classList.add("visible");
+          bgA.classList.remove("visible");
+          coucheActive = "b";
+        } else {
+          bgA.style.backgroundImage = `url("${nouvelleUrl}")`;
+          bgA.classList.add("visible");
+          bgB.classList.remove("visible");
+          coucheActive = "a";
+        }
+      };
+      img.src = nouvelleUrl;
+    }
+
+    function construireGrillesSeparees(v, s) {
+      const vs = Math.round(Number(v.taux_vertical || 0));
+      const vsTxt = vs !== 0 ? ` (${vs > 0 ? "+" + vs : vs})` : "";
+
+      const cartesLive = [
+        { label: "Distance axe", html: `${Number(v.distance_km).toFixed(2)}<span class="metric-unit">km</span>` },
+        { label: "Altitude", html: `${formaterNombre(v.altitude_ft) || "0"}<span class="metric-unit">ft</span>` },
+        { label: "Vitesse sol", html: `${formaterNombre(v.vitesse_kts) || "0"}<span class="metric-unit">kts</span>` },
+        { label: "Cap / Vario", html: `${Math.round(v.cap)}°<span class="metric-unit">${vsTxt}</span>` }
+      ];
+
+      document.getElementById("live-cards-grid").innerHTML = cartesLive.map(c => `
+        <div class="metric-card is-live">
+          <div class="metric-label">${c.label}</div>
+          <div class="metric-value">${c.html}</div>
+        </div>
+      `).join("");
+
+      const extras = [];
+
+      const pax = formaterNombre(extraireSpec(s, ["max_passengers", "passengers", "pax"]));
+      if (pax) extras.push({ label: "Capacité", html: `${pax}<span class="metric-unit">pax</span>` });
+
+      const range = formaterNombre(extraireSpec(s, ["range_km", "range"]));
+      if (range) extras.push({ label: "Autonomie", html: `${range}<span class="metric-unit">km</span>` });
+
+      const env = formaterNombre(extraireSpec(s, ["wingspan_m", "wingspan"]));
+      const lon = formaterNombre(extraireSpec(s, ["length_m", "length"]));
+      if (env && lon) {
+        extras.push({ label: "Envergure / Long.", html: `${env}<span class="metric-unit">m</span> × ${lon}<span class="metric-unit">m</span>` });
+      } else if (env) {
+        extras.push({ label: "Envergure", html: `${env}<span class="metric-unit">m</span>` });
+      } else if (lon) {
+        extras.push({ label: "Longueur", html: `${lon}<span class="metric-unit">m</span>` });
+      }
+
+      const cruise = formaterNombre(extraireSpec(s, ["cruise_speed_kmh", "cruise_speed_kts", "cruise_speed"]));
+      if (cruise) {
+        const unit = s.cruise_speed_kts ? "kts" : "km/h";
+        extras.push({ label: "Croisière", html: `${cruise}<span class="metric-unit">${unit}</span>` });
+      }
+
+      const ceiling = formaterNombre(extraireSpec(s, ["ceiling_ft", "max_altitude_ft", "ceiling"]));
+      if (ceiling) extras.push({ label: "Plafond max", html: `${ceiling}<span class="metric-unit">ft</span>` });
+
+      if (v.squawk && v.squawk !== "0000") {
+        extras.push({ label: "Squawk", html: `${v.squawk}` });
+      }
+
+      const nbExtrasRetenus = extras.length >= 4 ? 4 : (extras.length >= 2 ? 2 : 0);
+      const specsRetenues = extras.slice(0, nbExtrasRetenus);
+
+      const divider = document.getElementById("specs-divider");
+      const specsGrid = document.getElementById("specs-cards-grid");
+
+      if (specsRetenues.length > 0) {
+        divider.innerHTML = `
+          <span class="specs-divider-label">Spécifications appareil</span>
+          <span class="specs-divider-line"></span>
+        `;
+        specsGrid.className = "specs-cards-grid" + (specsRetenues.length === 2 ? " cols-2" : "");
+        specsGrid.innerHTML = specsRetenues.map(c => `
+          <div class="metric-card is-spec">
+            <div class="metric-label">${c.label}</div>
+            <div class="metric-value">${c.html}</div>
+          </div>
+        `).join("");
+      } else {
+        divider.innerHTML = "";
+        specsGrid.innerHTML = "";
+      }
+    }
+
+    function afficherFriseRecente(historique, hexActuel) {
+      const wrapper = document.getElementById("recent-strip-wrapper");
+      const precedents = (historique || []).filter(item => item.hex !== hexActuel).slice(0, 5);
+      const sig = precedents.map(p => `${p.hex}_${p.heure}`).join("|");
+
+      if (sig === derniereSigHistorique) return;
+      derniereSigHistorique = sig;
+
+      if (!precedents.length) {
+        wrapper.innerHTML = "";
+        return;
+      }
+
+      wrapper.innerHTML = `
+        <div class="recent-strip-label">Passages récents</div>
+        <div class="recent-strip">
+          ${precedents.map(p => `
+            <div class="recent-item ${p.rare ? "is-rare" : ""}" title="${p.compagnie ? p.compagnie + " • " : ""}${p.modele}">
+              <div class="recent-top">
+                <span>${p.indicatif}</span>
+                <span class="recent-time">${p.heure}</span>
+              </div>
+              <div class="recent-model">${p.modele}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function afficherListeTourDeControle(listeAvions, hexActuel) {
+      const container = document.getElementById("atc-list");
+      const title = document.getElementById("atc-drawer-title");
+      const nb = (listeAvions || []).length;
+      title.textContent = `${nb} appareil${nb > 1 ? "s" : ""} dans le secteur`;
+
+      if (!nb) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">Aucun appareil détecté dans cette zone pour le moment.</div>`;
+        return;
+      }
+
+      container.innerHTML = listeAvions.map(item => {
+        const av = item.vol;
+        const sp = item.specs || {};
+        const modele = `${sp.manufacturer || ""} ${sp.model || av.icao}`.trim();
+        const trajet = (av.origine || av.destination)
+          ? `${av.origine ? av.origine.code : "?"} → ${av.destination ? av.destination.code : "?"}`
+          : av.phase;
+        const actif = av.hex === hexActuel;
+        const identifiantVol = (av.num_vol && av.indicatif && av.num_vol !== av.indicatif)
+          ? `${av.indicatif} (${av.num_vol})`
+          : (av.indicatif || av.num_vol);
+
+        return `
+          <button type="button" class="atc-card ${actif ? "selected" : ""} ${av.badge_rare ? "is-rare" : ""}" data-hex="${av.hex}">
+            <div class="atc-card-top">
+              <span class="atc-callsign">${identifiantVol}${av.compagnie ? " • " + av.compagnie : ""}</span>
+              <span class="atc-dist">${Number(av.distance_km).toFixed(1)} km</span>
+            </div>
+            <div class="atc-model">${modele}</div>
+            <div class="atc-sub">
+              <span>${trajet} • ${formaterNombre(av.altitude_ft) || 0} ft</span>
+              <span>${formaterNombre(av.vitesse_kts) || 0} kts</span>
+            </div>
+            ${av.badge_rare ? `<div class="atc-rare-tag">⭐ ${av.badge_rare}</div>` : ""}
+          </button>
+        `;
+      }).join("");
+
+      container.querySelectorAll(".atc-card").forEach(btn => {
+        btn.addEventListener("click", () => {
+          hexVerrouille = btn.dataset.hex;
+          derniereSignature = "";
+          unlockBtn.classList.add("visible");
+          fermerDrawerATC();
+          actualiser();
+        });
+      });
+    }
+
+    function afficherDonnees(data) {
+      if (data.zone_id && data.zone_id !== zoneCourante) {
+        return;
+      }
+
+      const nb = data.nb_avions || 0;
+      document.getElementById("traffic-count").textContent = `${nb} avion${nb > 1 ? "s" : ""} en zone`;
+
+      if (hexVerrouille && !data.verrouille && data.statut === "actif") {
+        hexVerrouille = "";
+        unlockBtn.classList.remove("visible");
+      }
+
+      const hexActuel = data.vol ? data.vol.hex : "";
+      afficherFriseRecente(data.historique, hexActuel);
+      afficherListeTourDeControle(data.liste_avions, hexActuel);
+
+      if (data.statut !== "actif" || !data.vol) {
+        document.getElementById("status-label").textContent = `SCAN EN COURS • ${data.maj_serveur || ""}`;
+        return;
+      }
+
+      const v = data.vol;
+      const s = data.specs || {};
+      const photo = data.photo;
+
+      document.getElementById("status-label").textContent = `${data.source_api || "LIVE"} • ${data.maj_serveur || ""}`;
+      construireGrillesSeparees(v, s);
+
+      const origCode = v.origine ? v.origine.code : "";
+      const destCode = v.destination ? v.destination.code : "";
+      const pctVol = v.progression ? v.progression.pct : "";
+      const etaTxt = formaterHeureEta(v.eta_ts);
+      const ageTxt = v.age || "";
+      const sig = `${v.hex}_${v.icao}_${v.immat}_${origCode}_${destCode}_${pctVol}_${etaTxt}_${ageTxt}_${v.badge_rare || ""}`;
+
+      if (sig !== derniereSignature) {
+        derniereSignature = sig;
+
+        const hud = document.getElementById("hud-container");
+        const rareBanner = document.getElementById("rare-banner");
+        if (v.badge_rare) {
+          hud.classList.add("is-rare");
+          rareBanner.textContent = `⭐ APPAREIL REMARQUABLE • ${v.badge_rare}`;
+        } else {
+          hud.classList.remove("is-rare");
+          rareBanner.textContent = "";
+        }
+
+        document.getElementById("airline-name").textContent = v.compagnie || "Aviation Générale";
+        document.getElementById("callsign").textContent = v.num_vol && v.num_vol !== v.indicatif
+          ? `${v.indicatif} (${v.num_vol})`
+          : v.indicatif;
+        document.getElementById("flight-phase").textContent = v.phase;
+        document.getElementById("aircraft-model").textContent = `${s.manufacturer || ""} ${s.model || v.icao}`.trim();
+
+        const routeBanner = document.getElementById("route-banner");
+        if (v.origine || v.destination) {
+          const origNom = v.origine ? v.origine.nom : "Départ inconnu";
+          const destNom = v.destination ? v.destination.nom : "Destination inconnue";
+          const pct = v.progression ? v.progression.pct : (v.phase === "EN APPROCHE" ? 86 : (v.phase === "MONTÉE" ? 14 : 50));
+
+          const morceauxMeta = [];
+          if (v.progression) morceauxMeta.push(`${pct}%`);
+          if (etaTxt) morceauxMeta.push(`ETA ${etaTxt}`);
+          if (!morceauxMeta.length) morceauxMeta.push(v.phase);
+
+          routeBanner.innerHTML = `
+            <div class="route-airport">
+              <span class="route-tag">Départ</span>
+              <span class="route-name">${origNom}</span>
+            </div>
+            <div class="route-track-wrap">
+              <span class="route-track-meta">${morceauxMeta.join(" • ")}</span>
+              <div class="route-track">
+                <div class="route-track-fill" style="width: ${pct}%;"></div>
+                <div class="route-plane-icon" style="left: ${pct}%;">✈</div>
+              </div>
+            </div>
+            <div class="route-airport dest">
+              <span class="route-tag">Arrivée</span>
+              <span class="route-name">${destNom}</span>
+            </div>
+          `;
+        } else {
+          routeBanner.innerHTML = "";
+        }
+
+        const chips = [
+          `<span class="meta-chip">OACI : ${v.icao}</span>`,
+          `<span class="meta-chip">IMMAT : ${v.immat}</span>`
+        ];
+        if (ageTxt) {
+          chips.push(`<span class="meta-chip">ÂGE : ${ageTxt}</span>`);
+        }
+        document.getElementById("specs-chips").innerHTML = chips.join("");
+      }
+
+      const credit = document.getElementById("photo-credit");
+      if (photo && photo.url) {
+        changerPhoto(photo.url);
+        credit.textContent = `📷 ${photo.auteur}`;
+      } else {
+        changerPhoto("");
+        credit.textContent = "";
+      }
+    }
+
+    let premierChargementFait = false;
+    const timerReveilRender = setTimeout(() => {
+      const sub = document.getElementById("boot-status");
+      if (sub && !premierChargementFait) {
+        sub.textContent = "Réveil du serveur en cours (quelques secondes)...";
+      }
+    }, 3000);
+
+    function masquerEcranDemarrage() {
+      if (premierChargementFait) return;
+      premierChargementFait = true;
+      clearTimeout(timerReveilRender);
+      const boot = document.getElementById("boot-screen");
+      if (boot) boot.classList.add("hidden");
+    }
+
+    async function actualiser() {
+      try {
+        const paramHex = hexVerrouille ? `&hex=${encodeURIComponent(hexVerrouille)}` : "";
+        const r = await fetch(`/api/trafic?zone=${encodeURIComponent(zoneCourante)}${paramHex}&t=${Date.now()}`, { cache: "no-store" });
+        if (r.ok) {
+          afficherDonnees(await r.json());
+          masquerEcranDemarrage();
+        }
+      } catch (e) {}
+    }
+
+    actualiser();
+    setInterval(actualiser, 5000);
+  </script>
+</body>
+</html>
