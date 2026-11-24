@@ -1718,14 +1718,11 @@
           ? `${av.origine ? av.origine.code : "?"} → ${av.destination ? av.destination.code : "?"}`
           : av.phase;
         const actif = av.hex === hexActuel;
-        const identifiantVol = (av.num_vol && av.indicatif && av.num_vol !== av.indicatif)
-          ? `${av.indicatif} (${av.num_vol})`
-          : (av.indicatif || av.num_vol);
 
         return `
           <button type="button" class="atc-card ${actif ? "selected" : ""} ${av.badge_rare ? "is-rare" : ""}" data-hex="${av.hex}">
             <div class="atc-card-top">
-              <span class="atc-callsign">${identifiantVol}${av.compagnie ? " • " + av.compagnie : ""}</span>
+              <span class="atc-callsign">${av.indicatif}${av.compagnie ? " • " + av.compagnie : ""}</span>
               <span class="atc-dist">${Number(av.distance_km).toFixed(1)} km</span>
             </div>
             <div class="atc-model">${modele}</div>
@@ -1780,7 +1777,7 @@
 
       const origCode = v.origine ? v.origine.code : "";
       const destCode = v.destination ? v.destination.code : "";
-      const pctVol = v.progression ? v.progression.pct : "";
+      const pctVol = (v.progression && v.progression.pct !== null) ? v.progression.pct : "";
       const etaTxt = formaterHeureEta(v.eta_ts);
       const ageTxt = v.age || "";
       const sig = `${v.hex}_${v.icao}_${v.immat}_${origCode}_${destCode}_${pctVol}_${etaTxt}_${ageTxt}_${v.badge_rare || ""}`;
@@ -1809,10 +1806,12 @@
         if (v.origine || v.destination) {
           const origNom = v.origine ? v.origine.nom : "Départ inconnu";
           const destNom = v.destination ? v.destination.nom : "Destination inconnue";
-          const pct = v.progression ? v.progression.pct : (v.phase === "EN APPROCHE" ? 86 : (v.phase === "MONTÉE" ? 14 : 50));
+          const pct = (v.progression && v.progression.pct !== null)
+            ? v.progression.pct
+            : (v.phase === "EN APPROCHE" ? 86 : (v.phase === "MONTÉE" ? 14 : 50));
 
           const morceauxMeta = [];
-          if (v.progression) morceauxMeta.push(`${pct}%`);
+          if (v.progression && v.progression.pct !== null) morceauxMeta.push(`${pct}%`);
           if (etaTxt) morceauxMeta.push(`ETA ${etaTxt}`);
           if (!morceauxMeta.length) morceauxMeta.push(v.phase);
 
