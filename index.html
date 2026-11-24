@@ -52,10 +52,6 @@
     }
     .backdrop-layer.visible { opacity: 1; }
 
-    .backdrop-reflection-layer {
-      display: none;
-    }
-
     .backdrop-overlay {
       position: fixed;
       inset: 0;
@@ -63,6 +59,10 @@
       background:
         radial-gradient(circle at 20% 85%, rgba(7, 11, 20, 0.92) 0%, rgba(7, 11, 20, 0.52) 45%, rgba(7, 11, 20, 0.10) 85%),
         linear-gradient(to top, rgba(7, 11, 20, 0.85) 0%, rgba(7, 11, 20, 0.05) 55%);
+    }
+
+    .mobile-radar-grid {
+      display: none;
     }
 
     .main-stage {
@@ -977,7 +977,7 @@
     .photo-credit:empty { display: none; }
 
     /* =====================================================================
-       ADAPTATION MOBILE UNIQUEMENT (<= 768px) — NE TOUCHE PAS AU DESKTOP
+       OPTION B : CIEL INFINI — MOBILE UNIQUEMENT (<= 768px)
        ===================================================================== */
     @media (max-width: 768px) {
       body {
@@ -987,48 +987,33 @@
         -webkit-tap-highlight-color: transparent;
       }
 
-      /* 1. Photo nette centrée verticalement entre le header et le nom du modèle */
+      /* Photo plein écran jusqu'à l'encoche (56 % supérieurs de l'écran) */
       .backdrop-layer {
-        inset: auto;
-        top: calc(4.9rem + env(safe-area-inset-top));
-        left: 0;
-        right: 0;
-        height: 31dvh;
-        z-index: 1;
-        background-size: contain;
-        background-position: center center;
-        background-color: transparent;
-        filter: brightness(0.98) contrast(1.04) saturate(1.06);
-        mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 92%, transparent 100%);
-        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 92%, transparent 100%);
-      }
-
-      /* 2. Reflet inversé (reverse) flouté vers le bas pour étendre l'ambiance jusqu'au pied de page */
-      .backdrop-reflection-layer {
-        display: block;
-        position: fixed;
-        top: calc(4.9rem + env(safe-area-inset-top) + 30dvh);
-        left: -10%;
-        right: -10%;
-        height: 46dvh;
+        inset: 0 0 auto 0;
+        height: 58dvh;
         z-index: 0;
-        pointer-events: none;
         background-size: cover;
-        background-position: center bottom;
-        background-repeat: no-repeat;
-        transform: scaleY(-1);
-        filter: blur(28px) brightness(0.58) saturate(1.25);
-        opacity: 0;
-        transition: opacity 0.45s ease-in-out;
-        mask-image: linear-gradient(to top, black 0%, rgba(0, 0, 0, 0.72) 45%, transparent 100%);
-        -webkit-mask-image: linear-gradient(to top, black 0%, rgba(0, 0, 0, 0.72) 45%, transparent 100%);
+        background-position: 50% 34%;
+        filter: brightness(0.95) contrast(1.04) saturate(1.06);
+        mask-image: linear-gradient(
+          to bottom,
+          black 0%,
+          black 62%,
+          rgba(0, 0, 0, 0.75) 78%,
+          rgba(0, 0, 0, 0.25) 91%,
+          transparent 100%
+        );
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          black 0%,
+          black 62%,
+          rgba(0, 0, 0, 0.75) 78%,
+          rgba(0, 0, 0, 0.25) 91%,
+          transparent 100%
+        );
       }
 
-      .backdrop-reflection-layer.visible {
-        opacity: 0.85;
-      }
-
-      /* Dégradé de fusion douce derrière le HUD */
+      /* Fondu atmosphérique multi-étapes sans cassure */
       .backdrop-overlay {
         inset: 0;
         z-index: 1;
@@ -1036,13 +1021,32 @@
         background:
           linear-gradient(
             to bottom,
-            rgba(7, 11, 20, 0.88) 0%,
-            rgba(7, 11, 20, 0.0) 15%,
-            rgba(7, 11, 20, 0.0) 44%,
-            rgba(7, 11, 20, 0.68) 60%,
-            rgba(7, 11, 20, 0.94) 84%,
-            #070b14 100%
+            rgba(7, 11, 20, 0.78) 0%,
+            rgba(7, 11, 20, 0.18) 14%,
+            rgba(7, 11, 20, 0.0) 32%,
+            rgba(7, 11, 20, 0.32) 44%,
+            rgba(7, 11, 20, 0.86) 55%,
+            #070b14 64%
           );
+      }
+
+      /* Grille radar subtile en filigrane derrière la zone télémétrie */
+      .mobile-radar-grid {
+        display: block;
+        position: fixed;
+        top: 46dvh;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+        pointer-events: none;
+        background-image:
+          radial-gradient(circle at 50% 18%, rgba(56, 189, 248, 0.09) 0%, transparent 62%),
+          linear-gradient(rgba(56, 189, 248, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.035) 1px, transparent 1px);
+        background-size: 100% 100%, 34px 34px, 34px 34px;
+        mask-image: linear-gradient(to bottom, transparent 0%, black 22%, rgba(0, 0, 0, 0.45) 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 22%, rgba(0, 0, 0, 0.45) 100%);
       }
 
       .top-bar {
@@ -1052,7 +1056,7 @@
           0.6rem
           calc(1rem + env(safe-area-inset-left));
         gap: 0.45rem;
-        background: linear-gradient(to bottom, rgba(7, 11, 20, 0.78) 0%, rgba(7, 11, 20, 0) 100%);
+        background: linear-gradient(to bottom, rgba(7, 11, 20, 0.65) 0%, rgba(7, 11, 20, 0) 100%);
         transition: background 0.4s ease;
       }
 
@@ -1132,10 +1136,10 @@
         padding: 0.36rem 0.7rem;
       }
 
-      /* Positionne le bloc compagnie / modèle juste sous la photo centrée */
+      /* Laisse la photo respirer sur la moitié haute et place le titre sur la zone de fondu */
       .bottom-dock {
         margin-top: auto;
-        padding-top: 31dvh;
+        padding-top: 27dvh;
       }
 
       .rare-banner {
@@ -1302,11 +1306,10 @@
     </div>
   </div>
 
-  <div class="backdrop-reflection-layer" id="bg-ref-a"></div>
-  <div class="backdrop-reflection-layer" id="bg-ref-b"></div>
   <div class="backdrop-layer" id="bg-a"></div>
   <div class="backdrop-layer" id="bg-b"></div>
   <div class="backdrop-overlay"></div>
+  <div class="mobile-radar-grid"></div>
 
   <!-- VOLET LATÉRAL TOUR DE CONTRÔLE -->
   <div class="atc-backdrop" id="atc-backdrop"></div>
@@ -1791,28 +1794,16 @@
     function afficherImageSurCalque(url) {
       const bgA = document.getElementById("bg-a");
       const bgB = document.getElementById("bg-b");
-      const bgRefA = document.getElementById("bg-ref-a");
-      const bgRefB = document.getElementById("bg-ref-b");
 
       if (coucheActive === "a") {
         bgB.style.backgroundImage = `url("${url}")`;
         bgB.classList.add("visible");
         bgA.classList.remove("visible");
-
-        bgRefB.style.backgroundImage = `url("${url}")`;
-        bgRefB.classList.add("visible");
-        bgRefA.classList.remove("visible");
-
         coucheActive = "b";
       } else {
         bgA.style.backgroundImage = `url("${url}")`;
         bgA.classList.add("visible");
         bgB.classList.remove("visible");
-
-        bgRefA.style.backgroundImage = `url("${url}")`;
-        bgRefA.classList.add("visible");
-        bgRefB.classList.remove("visible");
-
         coucheActive = "a";
       }
     }
@@ -1822,7 +1813,6 @@
       if (!urlHd || urlHd === derniereUrlPhoto) return;
       derniereUrlPhoto = urlHd;
 
-      // Charger uniquement la version Haute Définition et l'afficher une fois prête
       const imgHd = new Image();
       imgHd.onload = () => {
         if (derniereUrlPhoto === urlHd) {
