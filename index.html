@@ -605,6 +605,7 @@
       .dynamic-cards-grid.cols-3,
       .dynamic-cards-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
     }
+
     /* --- ADAPTATION MOBILE (OPTION A : <= 768px UNIQUEMENT) --- */
     @media (max-width: 768px) {
       body {
@@ -868,6 +869,16 @@
   </style>
 </head>
 <body>
+  <div class="boot-screen" id="boot-screen">
+    <div class="boot-radar">
+      <div class="boot-center-dot"></div>
+    </div>
+    <div class="boot-text-wrap">
+      <div class="boot-title">INITIALISATION RADAR</div>
+      <div class="boot-sub" id="boot-status">Connexion à la tour de contrôle...</div>
+    </div>
+  </div>
+
   <div class="backdrop-layer" id="bg-a"></div>
   <div class="backdrop-layer" id="bg-b"></div>
   <div class="backdrop-overlay"></div>
@@ -1305,10 +1316,29 @@
       }
     }
 
+    let premierChargementFait = false;
+    const timerReveilRender = setTimeout(() => {
+      const sub = document.getElementById("boot-status");
+      if (sub && !premierChargementFait) {
+        sub.textContent = "Réveil du serveur en cours (quelques secondes)...";
+      }
+    }, 3000);
+
+    function masquerEcranDemarrage() {
+      if (premierChargementFait) return;
+      premierChargementFait = true;
+      clearTimeout(timerReveilRender);
+      const boot = document.getElementById("boot-screen");
+      if (boot) boot.classList.add("hidden");
+    }
+
     async function actualiser() {
       try {
         const r = await fetch(`/api/trafic?zone=${encodeURIComponent(zoneCourante)}&t=${Date.now()}`, { cache: "no-store" });
-        if (r.ok) afficherDonnees(await r.json());
+        if (r.ok) {
+          afficherDonnees(await r.json());
+          masquerEcranDemarrage();
+        }
       } catch (e) {}
     }
 
