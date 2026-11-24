@@ -1,16 +1,45 @@
 {
+  "id": "/radar-approche-live",
   "name": "Radar Approche — Temps Réel",
   "short_name": "Radar Live",
+  "description": "Radar aérien temps réel haute précision avec télémétrie et photos.",
   "start_url": "/",
+  "scope": "/",
   "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "orientation": "any",
   "background_color": "#070b14",
   "theme_color": "#070b14",
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "handle_links": "preferred",
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Radar Toulouse (TLS)",
+      "short_name": "Toulouse",
+      "url": "/?zone=TLS",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Radar Dubaï (DXB)",
+      "short_name": "Dubaï",
+      "url": "/?zone=DXB",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Radar Paris-CDG",
+      "short_name": "Paris CDG",
+      "url": "/?zone=CDG",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
     }
   ]
 }
