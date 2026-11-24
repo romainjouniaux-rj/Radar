@@ -83,6 +83,49 @@ AEROPORTS_IATA = {
     "XFW": "Hambourg-Finkenwerder (Airbus)", "CEQ": "Cannes", "LBG": "Paris-Le Bourget"
 }
 
+COORDS_AEROPORTS = {
+    "TLS": (43.629, 1.364), "ORY": (48.726, 2.365), "CDG": (49.010, 2.548), "BVA": (49.454, 2.113),
+    "LYS": (45.726, 5.081), "MRS": (43.439, 5.221), "NCE": (43.658, 7.216), "BOD": (44.828, -0.715),
+    "NTE": (47.153, -1.611), "SXB": (48.538, 7.628), "LIL": (50.562, 3.089), "MPL": (43.576, 3.963),
+    "BIQ": (43.468, -1.523), "PUF": (43.380, -0.419), "PGF": (42.740, 2.871), "RNS": (48.069, -1.735),
+    "BES": (48.448, -4.419), "FSC": (41.501, 9.098), "AJA": (41.924, 8.803), "BIA": (42.553, 9.484),
+    "LHR": (51.470, -0.454), "LGW": (51.154, -0.182), "STN": (51.885, 0.235), "LTN": (51.875, -0.368),
+    "LCY": (51.505, 0.055), "MAN": (53.354, -2.275), "BHX": (52.454, -1.748), "EDI": (55.950, -3.372),
+    "BRS": (51.383, -2.719), "DUB": (53.421, -6.270), "ORK": (51.841, -8.491),
+    "FRA": (50.038, 8.562), "MUC": (48.354, 11.786), "BER": (52.367, 13.503), "DUS": (51.289, 6.767),
+    "HAM": (53.630, 9.988), "CGN": (50.866, 7.143), "STR": (48.690, 9.222), "XFW": (53.536, 9.835),
+    "AMS": (52.310, 4.768), "EIN": (51.450, 5.374), "BRU": (50.901, 4.484), "CRL": (50.459, 4.454),
+    "LUX": (49.623, 6.204), "ZRH": (47.465, 8.549), "GVA": (46.238, 6.109), "BSL": (47.590, 7.530),
+    "VIE": (48.110, 16.570), "MAD": (40.498, -3.568), "BCN": (41.297, 2.083), "PMI": (39.552, 2.739),
+    "AGP": (36.675, -4.499), "ALC": (38.282, -0.558), "VLC": (39.489, -0.482), "SVQ": (37.418, -5.893),
+    "BIO": (43.301, -2.911), "IBZ": (38.873, 1.373), "TFS": (28.044, -16.572), "LPA": (27.932, -15.387),
+    "LIS": (38.781, -9.136), "OPO": (41.248, -8.681), "FAO": (37.014, -7.966),
+    "FCO": (41.800, 12.239), "MXP": (45.631, 8.728), "LIN": (45.445, 9.277), "BGY": (45.674, 9.704),
+    "VCE": (45.505, 12.352), "NAP": (40.886, 14.291), "BLQ": (44.535, 11.289), "CTA": (37.467, 15.066),
+    "ATH": (37.936, 23.944), "SKG": (40.520, 22.971), "HER": (35.340, 25.180),
+    "CPH": (55.618, 12.656), "OSL": (60.194, 11.100), "ARN": (59.652, 17.919), "HEL": (60.317, 24.963),
+    "KEF": (63.985, -22.606), "WAW": (52.166, 20.967), "KRK": (50.078, 19.785), "PRG": (50.101, 14.260),
+    "BUD": (47.437, 19.256), "OTP": (44.571, 26.085), "BEG": (44.818, 20.309), "ZAG": (45.743, 16.069),
+    "IST": (41.275, 28.752), "SAW": (40.899, 29.309), "AYT": (36.899, 30.800),
+    "DXB": (25.253, 55.366), "AUH": (24.433, 54.651), "DOH": (25.273, 51.608), "JED": (21.680, 39.157),
+    "RUH": (24.958, 46.699), "TLV": (32.011, 34.887), "AMM": (31.723, 35.993), "BEY": (33.821, 35.488),
+    "CMN": (33.367, -7.590), "RAK": (31.607, -8.036), "AGA": (30.325, -9.413), "FEZ": (33.927, -4.978),
+    "TNG": (35.727, -5.917), "ALG": (36.691, 3.215), "ORN": (35.624, -0.621), "TUN": (36.851, 10.227),
+    "DJE": (33.875, 10.776), "CAI": (30.122, 31.406), "DSS": (14.670, -17.073), "ABJ": (5.261, -3.926),
+    "RUN": (-20.887, 55.510), "MRU": (-20.430, 57.684), "JNB": (-26.139, 28.246), "ADD": (8.978, 38.799),
+    "JFK": (40.641, -73.778), "EWR": (40.690, -74.175), "BOS": (42.366, -71.010), "IAD": (38.953, -77.457),
+    "ATL": (33.641, -84.428), "MIA": (25.796, -80.287), "ORD": (41.974, -87.907), "DFW": (32.899, -97.040),
+    "IAH": (29.990, -95.337), "LAX": (33.942, -118.408), "SFO": (37.621, -122.379),
+    "YUL": (45.471, -73.741), "YYZ": (43.677, -79.625), "YVR": (49.197, -123.182),
+    "GRU": (-23.436, -46.473), "GIG": (-22.810, -43.251), "EZE": (-34.822, -58.536), "BOG": (4.702, -74.147),
+    "MEX": (19.436, -99.072), "CUN": (21.037, -86.877),
+    "HND": (35.549, 139.780), "NRT": (35.772, 140.393), "ICN": (37.460, 126.441), "PEK": (40.080, 116.585),
+    "PVG": (31.144, 121.808), "HKG": (22.308, 113.918), "SIN": (1.364, 103.992), "BKK": (13.690, 100.750),
+    "DEL": (28.556, 77.100), "BOM": (19.089, 72.868), "SYD": (-33.940, 151.175),
+    "KUL": (2.746, 101.710), "CGK": (-6.126, 106.656), "MNL": (14.509, 121.020), "TPE": (25.080, 121.234),
+    "HAN": (21.221, 105.807), "SGN": (10.819, 106.652), "CEQ": (43.542, 6.953), "LBG": (48.969, 2.441)
+}
+
 COMPAGNIES_ICAO = {
     "AFR": "Air France", "HOP": "Air France Hop", "TVF": "Transavia France",
     "FPO": "ASL Airlines France", "CRL": "Corsair", "FWI": "Air Caraïbes",
@@ -156,6 +199,7 @@ etats_radars = {
         "zone_id": z,
         "zone": cfg["nom"],
         "nb_avions": 0,
+        "liste_avions": [],
         "historique": []
     }
     for z, cfg in AEROPORTS_PRESETS.items()
@@ -171,6 +215,21 @@ def distance_km(lat1, lon1, lat2, lon2):
     dl = math.radians(lon2 - lon1)
     a = math.sin(dp / 2)**2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2)**2
     return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 2)
+
+def calculer_progression_vol(orig_code, dest_code, lat_ac, lon_ac):
+    if orig_code in COORDS_AEROPORTS and dest_code in COORDS_AEROPORTS and orig_code != dest_code:
+        lat1, lon1 = COORDS_AEROPORTS[orig_code]
+        lat2, lon2 = COORDS_AEROPORTS[dest_code]
+        dist_totale = distance_km(lat1, lon1, lat2, lon2)
+        if dist_totale > 5:
+            dist_restante = distance_km(lat_ac, lon_ac, lat2, lon2)
+            pct = max(2, min(98, round((1.0 - (dist_restante / dist_totale)) * 100)))
+            return {
+                "pct": pct,
+                "dist_totale_km": round(dist_totale),
+                "dist_restante_km": round(dist_restante)
+            }
+    return None
 
 def formater_aeroport(code_iata):
     code = str(code_iata or "").strip().upper()
@@ -256,6 +315,9 @@ def charger_photo_asynchrone(cle, immat, hex_code, modele, compagnie):
                 for etat in etats_radars.values():
                     if etat.get("vol", {}).get("hex") == hex_code:
                         etat["photo"] = res
+                    for item in etat.get("liste_avions", []):
+                        if item.get("vol", {}).get("hex") == hex_code:
+                            item["photo"] = res
     finally:
         photos_en_cours.discard(cle)
 
@@ -263,7 +325,7 @@ def obtenir_photo(immat, hex_code, modele, compagnie):
     cle = f"{hex_code}_{immat}_{modele}"
     if cle in cache_photos:
         return cache_photos[cle]
-    if cle not in photos_en_cours and len(photos_en_cours) < 8:
+    if cle not in photos_en_cours and len(photos_en_cours) < 10:
         photos_en_cours.add(cle)
         threading.Thread(target=charger_photo_asynchrone, args=(cle, immat, hex_code, modele, compagnie), daemon=True).start()
     return None
@@ -310,6 +372,13 @@ def interroger_flightradar24(zone_cfg):
         compagnie_code = str(v[18] or "").strip().upper() if len(v) > 18 else indicatif[:3].upper()
         compagnie = COMPAGNIES_ICAO.get(compagnie_code) or COMPAGNIES_ICAO.get(indicatif[:3].upper(), "")
         badge_rare = detecter_rarete(icao, indicatif)
+        phase = "EN APPROCHE" if vario < -150 or alt < 4500 else ("MONTÉE" if vario > 250 else "PALIER")
+        progression = calculer_progression_vol(
+            origine["code"] if origine else "",
+            destination["code"] if destination else "",
+            lat_ac,
+            lon_ac
+        )
 
         avions.append({
             "hex": hex_code,
@@ -320,8 +389,10 @@ def interroger_flightradar24(zone_cfg):
             "icao": icao or "—",
             "squawk": squawk,
             "badge_rare": badge_rare,
+            "phase": phase,
             "origine": origine,
             "destination": destination,
+            "progression": progression,
             "lat": lat_ac,
             "lon": lon_ac,
             "altitude_ft": alt,
@@ -339,20 +410,20 @@ def actualiser_zone(zone_id):
         candidats, ms = interroger_flightradar24(zone_cfg)
         if candidats:
             candidats.sort(key=lambda x: x["distance_km"])
-            c = candidats[0]
-            specs = dict(base_avions.get(c["icao"], {}))
-            nom_complet = f"{specs.get('manufacturer', '')} {specs.get('model', c['icao'])}".strip()
-            photo = obtenir_photo(c["immat"], c["hex"], nom_complet, c["compagnie"])
+            liste_enrichie = []
+            for idx, av in enumerate(candidats):
+                sp = dict(base_avions.get(av["icao"], {}))
+                nom_complet = f"{sp.get('manufacturer', '')} {sp.get('model', av['icao'])}".strip()
+                ph = obtenir_photo(av["immat"], av["hex"], nom_complet, av["compagnie"]) if idx < 8 else cache_photos.get(f"{av['hex']}_{av['immat']}_{nom_complet}")
+                liste_enrichie.append({
+                    "vol": av,
+                    "specs": sp,
+                    "photo": ph
+                })
 
-            vario = c["taux_vertical"]
-            c["phase"] = "EN APPROCHE" if vario < -150 or c["altitude_ft"] < 4500 else ("MONTÉE" if vario > 250 else "PALIER")
-
-            for suiv in candidats[1:4]:
-                sp_s = base_avions.get(suiv["icao"], {})
-                obtenir_photo(suiv["immat"], suiv["hex"], f"{sp_s.get('manufacturer', '')} {sp_s.get('model', suiv['icao'])}".strip(), suiv["compagnie"])
-
+            principal = liste_enrichie[0]
             with verrou:
-                hist_maj = enregistrer_historique(zone_id, c, specs, heure)
+                hist_maj = enregistrer_historique(zone_id, principal["vol"], principal["specs"], heure)
                 etats_radars[zone_id] = {
                     "statut": "actif",
                     "maj_serveur": heure,
@@ -360,9 +431,10 @@ def actualiser_zone(zone_id):
                     "zone_id": zone_id,
                     "zone": zone_cfg["nom"],
                     "nb_avions": len(candidats),
-                    "vol": c,
-                    "specs": specs,
-                    "photo": photo,
+                    "vol": principal["vol"],
+                    "specs": principal["specs"],
+                    "photo": principal["photo"],
+                    "liste_avions": liste_enrichie,
                     "historique": hist_maj
                 }
         else:
@@ -373,6 +445,7 @@ def actualiser_zone(zone_id):
                     "zone_id": zone_id,
                     "zone": zone_cfg["nom"],
                     "nb_avions": 0,
+                    "liste_avions": [],
                     "historique": list(historique_zones.get(zone_id, []))
                 }
     except Exception as e:
@@ -427,21 +500,40 @@ class RadarHandler(SimpleHTTPRequestHandler):
 
         elif parsed.path == "/api/trafic":
             zone_req = params.get("zone", [ZONE_DEFAUT])[0].strip().upper()
+            hex_cible = params.get("hex", [""])[0].strip().lower()
             if zone_req not in AEROPORTS_PRESETS:
                 zone_req = ZONE_DEFAUT
 
             declencher = False
             with verrou:
                 derniere_activite_zone[zone_req] = time.time()
-                etat = etats_radars[zone_req]
+                etat = dict(etats_radars[zone_req])
                 if not etat.get("maj_serveur"):
                     declencher = True
-                if etat.get("statut") == "actif":
+
+                # Si un appareil spécifique est verrouillé par l'utilisateur
+                if hex_cible and etat.get("liste_avions"):
+                    trouve = next((item for item in etat["liste_avions"] if item["vol"]["hex"] == hex_cible), None)
+                    if trouve:
+                        v = trouve["vol"]
+                        s = trouve["specs"]
+                        photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
+                        if photo:
+                            trouve["photo"] = photo
+                        etat["vol"] = v
+                        etat["specs"] = s
+                        etat["photo"] = trouve["photo"]
+                        etat["verrouille"] = True
+                    else:
+                        etat["verrouille"] = False
+                elif etat.get("statut") == "actif":
                     v = etat["vol"]
                     s = etat.get("specs", {})
                     photo = obtenir_photo(v["immat"], v["hex"], f"{s.get('manufacturer', '')} {s.get('model', v['icao'])}".strip(), v.get("compagnie", ""))
                     if photo:
                         etat["photo"] = photo
+                    etat["verrouille"] = False
+
                 payload = json.dumps(etat).encode("utf-8")
 
             if declencher:
@@ -454,10 +546,12 @@ class RadarHandler(SimpleHTTPRequestHandler):
             self.wfile.write(payload)
         else:
             super().do_GET()
+
 RadarHandler.extensions_map.update({
     ".json": "application/manifest+json",
     ".svg": "image/svg+xml",
 })
+
 threading.Thread(target=boucle_radar, daemon=True).start()
 print(f"🚀 Radar multi-zones actif sur le port {PORT}")
 ThreadingHTTPServer(("0.0.0.0", PORT), RadarHandler).serve_forever()
