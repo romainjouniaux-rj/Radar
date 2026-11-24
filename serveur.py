@@ -454,7 +454,10 @@ class RadarHandler(SimpleHTTPRequestHandler):
             self.wfile.write(payload)
         else:
             super().do_GET()
-
+RadarHandler.extensions_map.update({
+    ".json": "application/manifest+json",
+    ".svg": "image/svg+xml",
+})
 threading.Thread(target=boucle_radar, daemon=True).start()
 print(f"🚀 Radar multi-zones actif sur le port {PORT}")
 ThreadingHTTPServer(("0.0.0.0", PORT), RadarHandler).serve_forever()
