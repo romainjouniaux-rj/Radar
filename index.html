@@ -1718,31 +1718,49 @@
       return null;
     }
 
-    function changerPhoto(nouvelleUrl) {
-      if (nouvelleUrl === derniereUrlPhoto) return;
-      derniereUrlPhoto = nouvelleUrl;
+    function afficherImageSurCalque(url) {
       const bgA = document.getElementById("bg-a");
       const bgB = document.getElementById("bg-b");
-      if (!nouvelleUrl) {
+      if (coucheActive === "a") {
+        bgB.style.backgroundImage = `url("${url}")`;
+        bgB.classList.add("visible");
         bgA.classList.remove("visible");
+        coucheActive = "b";
+      } else {
+        bgA.style.backgroundImage = `url("${url}")`;
+        bgA.classList.add("visible");
         bgB.classList.remove("visible");
-        return;
+        coucheActive = "a";
       }
-      const img = new Image();
-      img.onload = () => {
-        if (coucheActive === "a") {
-          bgB.style.backgroundImage = `url("${nouvelleUrl}")`;
-          bgB.classList.add("visible");
-          bgA.classList.remove("visible");
-          coucheActive = "b";
-        } else {
-          bgA.style.backgroundImage = `url("${nouvelleUrl}")`;
-          bgA.classList.add("visible");
-          bgB.classList.remove("visible");
-          coucheActive = "a";
+    }
+
+    function changerPhoto(photoObj) {
+      const urlHd = photoObj && photoObj.url ? photoObj.url : "";
+      const urlThumb = photoObj && photoObj.thumb ? photoObj.thumb : urlHd;
+
+      if (!urlHd) return;
+      if (urlHd === derniereUrlPhoto) return;
+      derniereUrlPhoto = urlHd;
+
+      // 1. Afficher la miniature légère quasi instantanément si disponible
+      if (urlThumb && urlThumb !== urlHd) {
+        const imgThumb = new Image();
+        imgThumb.onload = () => {
+          if (derniereUrlPhoto === urlHd) {
+            afficherImageSurCalque(urlThumb);
+          }
+        };
+        imgThumb.src = urlThumb;
+      }
+
+      // 2. Charger la haute définition en parallèle et basculer sans coupure
+      const imgHd = new Image();
+      imgHd.onload = () => {
+        if (derniereUrlPhoto === urlHd) {
+          afficherImageSurCalque(urlHd);
         }
       };
-      img.src = nouvelleUrl;
+      imgHd.src = urlHd;
     }
 
     function construireGrillesSeparees(v, s) {
@@ -1974,11 +1992,8 @@
 
       const credit = document.getElementById("photo-credit");
       if (photo && photo.url) {
-        changerPhoto(photo.url);
+        changerPhoto(photo);
         credit.textContent = `📷 ${photo.auteur}`;
-      } else {
-        changerPhoto("");
-        credit.textContent = "";
       }
     }
 
