@@ -123,7 +123,7 @@
     .top-right {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.55rem;
     }
 
     /* --- MENU DÉROULANT AÉROPORT SUR MESURE --- */
@@ -331,6 +331,36 @@
       position: fixed;
       top: calc(1.3rem + env(safe-area-inset-top));
       left: calc(2.2rem + env(safe-area-inset-left));
+    }
+
+    .alert-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(11, 18, 34, 0.86);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      backdrop-filter: blur(14px);
+      padding: 0.42rem 0.78rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .alert-pill:hover {
+      border-color: rgba(251, 191, 36, 0.55);
+      color: #fde68a;
+    }
+
+    .alert-pill.active {
+      color: #fde68a;
+      background: rgba(245, 158, 11, 0.22);
+      border-color: rgba(251, 191, 36, 0.65);
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.22);
     }
 
     .traffic-pill {
@@ -1036,9 +1066,10 @@
 
       .airport-tag,
       .traffic-pill,
-      .lock-pill {
-        font-size: 0.74rem;
-        padding: 0.36rem 0.75rem;
+      .lock-pill,
+      .alert-pill {
+        font-size: 0.72rem;
+        padding: 0.36rem 0.7rem;
       }
 
       .bottom-dock {
@@ -1316,6 +1347,10 @@
     </div>
 
     <div class="top-right fadeable-ui">
+      <button type="button" class="alert-pill" id="alert-btn" title="Recevoir une notification lors du passage d'un appareil rare">
+        <span id="alert-icon">🔕</span>
+        <span id="alert-label">Alertes Rares</span>
+      </button>
       <button type="button" class="lock-pill" id="unlock-btn" title="Revenir automatiquement sur l'avion le plus proche">
         <span>🔒 SUIVI VERROUILLÉ • Direct</span>
       </button>
@@ -1383,13 +1418,126 @@
   </main>
 
   <script>
+    // --- ENREGISTREMENT SERVICE WORKER (DÉMARRAGE INSTANTANÉ & NOTIFICATIONS) ---
+    let swRegistration = null;
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js")
+          .then((reg) => { swRegistration = reg; })
+          .catch(() => {});
+      });
+
+      navigator.serviceWorker.addEventListener("message", (event) => {
+        if (event.data?.type === "VERROUILLER_AVION_RARE" && event.data.hex) {
+          hexVerrouille = event.data.hex;
+          derniereSignature = "";
+          unlockBtn.classList.add("visible");
+          actualiser();
+        }
+      });
+    }
+
+    // --- GESTION DES PARAMÈTRES URL (RACCOURCIS D'ICÔNE & NOTIFICATIONS) ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramZoneUrl = urlParams.get("zone");
+    const paramHexUrl = urlParams.get("hex");
+
     let derniereUrlPhoto = "";
     let coucheActive = "a";
     let derniereSignature = "";
-    let zoneCourante = localStorage.getItem("radar_zone_id") || "TLS";
-    let hexVerrouille = "";
+    let zoneCourante = paramZoneUrl || localStorage.getItem("radar_zone_id") || "TLS";
+    let hexVerrouille = paramHexUrl || "";
     let timerInactivite = null;
     let afficherEtaCycle = false;
+
+    if (paramZoneUrl) {
+      localStorage.setItem("radar_zone_id", paramZoneUrl);
+      fetch(`/api/zone?id=${encodeURIComponent(paramZoneUrl)}`).catch(() => {});
+    }
+
+    // --- SYSTÈME DE NOTIFICATIONS PUSH LOCALES "AVIONS RARES" ---
+    const alertBtn = document.getElementById("alert-btn");
+    const alertIcon = document.getElementById("alert-icon");
+    const alertLabel = document.getElementById("alert-label");
+    let alertesActives = localStorage.getItem("radar_alertes_rares") === "1" && ("Notification" in window) && Notification.permission === "granted";
+    const raresDejaNotifies = new Set(JSON.parse(sessionStorage.getItem("rares_notifies") || "[]"));
+
+    function majBoutonAlertes() {
+      alertBtn.classList.toggle("active", alertesActives);
+      alertIcon.textContent = alertesActives ? "🔔" : "🔕";
+      alertLabel.textContent = alertesActives ? "Alertes ON" : "Alertes Rares";
+    }
+    majBoutonAlertes();
+
+    alertBtn.addEventListener("click", async () => {
+      if (!("Notification" in window)) {
+        alert("Les notifications ne sont pas supportées par ce navigateur.");
+        return;
+      }
+
+      if (alertesActives) {
+        alertesActives = false;
+        localStorage.setItem("radar_alertes_rares", "0");
+        majBoutonAlertes();
+        return;
+      }
+
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") {
+        alertesActives = true;
+        localStorage.setItem("radar_alertes_rares", "1");
+        majBoutonAlertes();
+        envoyerNotificationRare(
+          "Radar Approche • Alertes activées",
+          `Vous serez averti dès qu'un appareil rare (Beluga, A380, prototype...) entre dans le secteur ${zoneCourante}.`,
+          "",
+          zoneCourante
+        );
+      } else {
+        alert("Autorise les notifications dans les réglages de ton navigateur pour recevoir les alertes.");
+      }
+    });
+
+    function envoyerNotificationRare(titre, corps, hex, zone) {
+      if (!alertesActives || Notification.permission !== "granted") return;
+
+      const optionsNotif = {
+        body: corps,
+        icon: "/icon.svg",
+        badge: "/icon.svg",
+        tag: hex ? `rare-${hex}` : "radar-test",
+        vibrate: [200, 100, 200],
+        data: { hex, zone }
+      };
+
+      if (swRegistration && swRegistration.showNotification) {
+        swRegistration.showNotification(titre, optionsNotif);
+      } else {
+        new Notification(titre, optionsNotif);
+      }
+    }
+
+    function verifierAvionsRaresEnZone(listeAvions, zoneId) {
+      if (!alertesActives || !Array.isArray(listeAvions)) return;
+
+      for (const item of listeAvions) {
+        const av = item.vol;
+        if (!av || !av.badge_rare || !av.hex) continue;
+
+        const cleUniq = `${zoneId}_${av.hex}`;
+        if (raresDejaNotifies.has(cleUniq)) continue;
+
+        raresDejaNotifies.add(cleUniq);
+        sessionStorage.setItem("rares_notifies", JSON.stringify([...raresDejaNotifies]));
+
+        const sp = item.specs || {};
+        const modele = `${sp.manufacturer || ""} ${sp.model || av.icao}`.trim();
+        const titre = `⭐ ${av.badge_rare} (${zoneId})`;
+        const corps = `${modele} • ${av.indicatif}${av.compagnie ? " (" + av.compagnie + ")" : ""} à ${Number(av.distance_km).toFixed(1)} km`;
+
+        envoyerNotificationRare(titre, corps, av.hex, zoneId);
+      }
+    }
 
     setInterval(() => {
       document.getElementById("live-clock").textContent = new Date().toLocaleTimeString("fr-FR");
@@ -1422,6 +1570,10 @@
     const trafficBtn = document.getElementById("traffic-btn");
     const atcClose = document.getElementById("atc-close");
     const unlockBtn = document.getElementById("unlock-btn");
+
+    if (hexVerrouille) {
+      unlockBtn.classList.add("visible");
+    }
 
     function ouvrirDrawerATC() {
       atcDrawer.classList.add("open");
@@ -1465,7 +1617,7 @@
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         liveClock.style.transition = "none";
         liveClock.style.transform = `translate(${dx}px, ${dy}px)`;
-        liveClock.offsetHeight; // force le reflow
+        liveClock.offsetHeight;
         liveClock.style.transition = "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)";
         liveClock.style.transform = "translate(0, 0)";
       }
@@ -1717,6 +1869,8 @@
       if (data.zone_id && data.zone_id !== zoneCourante) {
         return;
       }
+
+      verifierAvionsRaresEnZone(data.liste_avions, data.zone_id || zoneCourante);
 
       const nb = data.nb_avions || 0;
       document.getElementById("traffic-count").textContent = `${nb} avion${nb > 1 ? "s" : ""} en zone`;
