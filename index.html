@@ -53,7 +53,8 @@
     .backdrop-layer.visible { opacity: 1; }
 
     .mobile-ambient-layer,
-    .mobile-showcase-slot {
+    .mobile-showcase-slot,
+    .ptr-indicator {
       display: none;
     }
 
@@ -996,14 +997,111 @@
     .photo-credit:empty { display: none; }
 
     /* =====================================================================
-       MOBILE UNIQUEMENT (<= 768px) — FUSION ATMOSPHÉRIQUE SANS ENCADRÉ
+       MOBILE UNIQUEMENT (<= 768px) — FUSION ATMOSPHÉRIQUE & PULL-TO-REFRESH
        ===================================================================== */
     @media (max-width: 768px) {
+      html, body {
+        overscroll-behavior-y: none;
+      }
+
       body {
         height: auto;
         min-height: 100dvh;
         overflow-y: auto;
         -webkit-tap-highlight-color: transparent;
+      }
+
+      /* --- INDICATEUR PULL-TO-REFRESH MINI-RADAR --- */
+      .ptr-indicator {
+        position: fixed;
+        top: calc(0.6rem + env(safe-area-inset-top));
+        left: 50%;
+        transform: translate3d(-50%, -95px, 0);
+        z-index: 60;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.62rem;
+        background: rgba(9, 14, 26, 0.92);
+        border: 1px solid rgba(56, 189, 248, 0.45);
+        backdrop-filter: blur(18px);
+        padding: 0.44rem 0.95rem 0.44rem 0.52rem;
+        border-radius: 999px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 20px rgba(56, 189, 248, 0.22);
+        pointer-events: none;
+        opacity: 0;
+        will-change: transform, opacity;
+      }
+
+      .ptr-indicator.releasing {
+        transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
+      }
+
+      .ptr-indicator.ready {
+        border-color: var(--live);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 22px rgba(16, 185, 129, 0.32);
+      }
+
+      .ptr-radar {
+        position: relative;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(56, 189, 248, 0.55);
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, transparent 72%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .ptr-indicator.ready .ptr-radar {
+        border-color: var(--live);
+      }
+
+      .ptr-radar::before {
+        content: "";
+        position: absolute;
+        inset: 5px;
+        border-radius: 50%;
+        border: 1px dashed rgba(56, 189, 248, 0.35);
+      }
+
+      .ptr-sweep {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.85) 0deg, transparent 105deg);
+        transform: rotate(var(--ptr-angle, 0deg));
+      }
+
+      .ptr-indicator.ready .ptr-sweep {
+        background: conic-gradient(from 0deg, rgba(16, 185, 129, 0.9) 0deg, transparent 110deg);
+      }
+
+      .ptr-indicator.refreshing .ptr-sweep {
+        animation: radar-sweep 0.9s linear infinite;
+      }
+
+      .ptr-dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--live);
+        box-shadow: 0 0 6px var(--live);
+        z-index: 1;
+      }
+
+      .ptr-text {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #e2e8f0;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+
+      .ptr-indicator.ready .ptr-text {
+        color: #6ee7b7;
       }
 
       /* On masque les calques plein-écran du desktop sur mobile */
@@ -1359,6 +1457,15 @@
       <div class="boot-title">INITIALISATION RADAR</div>
       <div class="boot-sub" id="boot-status">Connexion à la tour de contrôle...</div>
     </div>
+  </div>
+
+  <!-- INDICATEUR PULL-TO-REFRESH MOBILE -->
+  <div class="ptr-indicator" id="ptr-indicator" aria-hidden="true">
+    <div class="ptr-radar">
+      <div class="ptr-sweep"></div>
+      <div class="ptr-dot"></div>
+    </div>
+    <span class="ptr-text" id="ptr-text">Tirer pour scanner</span>
   </div>
 
   <div class="mobile-ambient-layer" id="bg-amb-a"></div>
@@ -1763,7 +1870,6 @@
       const dejaActif = document.body.classList.contains("idle-mode");
       if (actif === dejaActif) return;
 
-      // Verrouille l'écouteur de scroll pendant l'animation de padding-top pour éviter tout rebond
       verrouTransitionHeader = true;
       clearTimeout(timerVerrouTransition);
       timerVerrouTransition = setTimeout(() => {
@@ -1794,7 +1900,6 @@
       lancerMinuteurInactivite();
     }
 
-    // Détection propre du défilement (masque en descendant, réaffiche en remontant)
     window.addEventListener("scroll", () => {
       if (verrouTransitionHeader) return;
 
@@ -1816,20 +1921,89 @@
       dernierScrollY = scrollActuel;
     }, { passive: true });
 
-    // Un clic / tap n'importe où sur l'écran bascule l'affichage du header
+    // --- PULL-TO-REFRESH PERSONNALISÉ (MINI-RADAR MOBILE) & CLIC ÉCRAN ---
+    const ptrIndicator = document.getElementById("ptr-indicator");
+    const ptrText = document.getElementById("ptr-text");
+    const PTR_SEUIL = 76;
+
     let toucheDepartX = 0;
     let toucheDepartY = 0;
     let dernierTapTimestamp = 0;
+    let ptrActif = false;
+    let ptrPret = false;
+    let ptrEnCours = false;
+    let ptrDistance = 0;
+
+    function majVisuelPtr(dist) {
+      const clamped = Math.max(0, Math.min(dist, 120));
+      const ratio = Math.min(1, clamped / PTR_SEUIL);
+      const translateY = -95 + ratio * 135;
+
+      ptrIndicator.classList.remove("releasing");
+      ptrIndicator.style.opacity = String(ratio);
+      ptrIndicator.style.transform = `translate3d(-50%, ${translateY}px, 0)`;
+      ptrIndicator.style.setProperty("--ptr-angle", `${Math.round(clamped * 3.4)}deg`);
+
+      const estPret = clamped >= PTR_SEUIL;
+      if (estPret !== ptrPret) {
+        ptrPret = estPret;
+        ptrIndicator.classList.toggle("ready", estPret);
+        ptrText.textContent = estPret ? "Relâcher pour scanner" : "Tirer pour scanner";
+        if (estPret && navigator.vibrate) {
+          navigator.vibrate(15);
+        }
+      }
+    }
+
+    function fermerPtr() {
+      ptrIndicator.classList.add("releasing");
+      ptrIndicator.style.opacity = "0";
+      ptrIndicator.style.transform = "translate3d(-50%, -95px, 0)";
+      setTimeout(() => {
+        ptrIndicator.classList.remove("ready", "refreshing", "releasing");
+        ptrText.textContent = "Tirer pour scanner";
+        ptrEnCours = false;
+      }, 340);
+    }
 
     document.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) {
-        toucheDepartX = e.touches[0].clientX;
-        toucheDepartY = e.touches[0].clientY;
+      if (e.touches.length !== 1) return;
+      toucheDepartX = e.touches[0].clientX;
+      toucheDepartY = e.touches[0].clientY;
+      ptrActif = false;
+      ptrDistance = 0;
+
+      if (
+        !ptrEnCours &&
+        window.innerWidth <= 768 &&
+        (window.scrollY || 0) <= 0 &&
+        !atcDrawer.classList.contains("open") &&
+        !dropdown.classList.contains("open")
+      ) {
+        ptrActif = true;
+      }
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (e) => {
+      if (!ptrActif || ptrEnCours || e.touches.length !== 1) return;
+      if ((window.scrollY || 0) > 0) {
+        ptrActif = false;
+        return;
+      }
+
+      const dy = e.touches[0].clientY - toucheDepartY;
+      const dx = Math.abs(e.touches[0].clientX - toucheDepartX);
+
+      if (dy > 8 && dy > dx * 1.2) {
+        ptrDistance = dy * 0.58;
+        majVisuelPtr(ptrDistance);
+      } else if (dy <= 0 && ptrDistance > 0) {
+        ptrDistance = 0;
+        majVisuelPtr(0);
       }
     }, { passive: true });
 
     function gererClicBasculerHeader(e) {
-      // Ignore les clics sur les contrôles interactifs, menus et volets
       if (
         e.target.closest("button") ||
         e.target.closest(".airport-dropdown") ||
@@ -1850,11 +2024,33 @@
       }
     }
 
-    document.addEventListener("touchend", (e) => {
+    document.addEventListener("touchend", async (e) => {
       if (e.changedTouches.length !== 1) return;
+
+      if (ptrActif && ptrDistance > 0) {
+        ptrActif = false;
+        if (ptrPret && !ptrEnCours) {
+          ptrEnCours = true;
+          ptrIndicator.classList.add("releasing", "refreshing");
+          ptrIndicator.style.opacity = "1";
+          ptrIndicator.style.transform = "translate3d(-50%, 36px, 0)";
+          ptrText.textContent = "Scan radar...";
+
+          derniereSignature = "";
+          const minDelai = new Promise(res => setTimeout(res, 650));
+          await Promise.all([actualiser(), minDelai]);
+          fermerPtr();
+        } else {
+          fermerPtr();
+        }
+        ptrPret = false;
+        ptrDistance = 0;
+        return;
+      }
+
+      ptrActif = false;
       const dx = Math.abs(e.changedTouches[0].clientX - toucheDepartX);
       const dy = Math.abs(e.changedTouches[0].clientY - toucheDepartY);
-      // Vérifie que c'est bien un tap et non un scroll/swipe
       if (dx < 10 && dy < 10) {
         dernierTapTimestamp = Date.now();
         gererClicBasculerHeader(e);
@@ -1862,7 +2058,6 @@
     }, { passive: true });
 
     document.addEventListener("click", (e) => {
-      // Évite le double déclenchement click après touchend sur mobile
       if (Date.now() - dernierTapTimestamp < 450) return;
       gererClicBasculerHeader(e);
     });
