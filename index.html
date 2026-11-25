@@ -55,7 +55,8 @@
     .mobile-ambient-layer,
     .mobile-showcase-slot,
     .ptr-indicator,
-    .swipe-index-pill {
+    .swipe-index-pill,
+    .idle-mobile-bar {
       display: none;
     }
 
@@ -142,7 +143,7 @@
       gap: 0.55rem;
     }
 
-    /* --- REPÈRE SUBTIL AÉROPORT EN MODE VEILLE / RÉTRACTÉ --- */
+    /* --- REPÈRE SUBTIL AÉROPORT EN MODE VEILLE / RÉTRACTÉ (DESKTOP) --- */
     .idle-airport-badge {
       position: fixed;
       top: calc(1.3rem + env(safe-area-inset-top));
@@ -1219,36 +1220,65 @@
         background: transparent;
       }
 
-      /* Bandeau rétracté : Horloge à gauche, Aéroport centré entre les deux, Tour de contrôle à droite */
-      body.idle-mode .live-clock {
-        position: fixed;
-        top: calc(0.65rem + env(safe-area-inset-top));
-        left: calc(1rem + env(safe-area-inset-left));
+      /* --- BARRE COMPACTE MOBILE (IDLE-MODE) EN GRILLE 3 COLONNES :
+         [Horloge à gauche] [Vignette Aéroport centrée entre les deux] [Tour de contrôle à droite] --- */
+      .idle-airport-badge {
+        display: none !important;
       }
 
-      .idle-airport-badge {
-        top: calc(0.65rem + env(safe-area-inset-top));
-        left: 50%;
+      body.idle-mode .top-bar {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        column-gap: 0.45rem;
+        padding:
+          calc(0.65rem + env(safe-area-inset-top))
+          calc(1rem + env(safe-area-inset-right))
+          0.4rem
+          calc(1rem + env(safe-area-inset-left));
+      }
+
+      body.idle-mode .top-left,
+      body.idle-mode .top-right {
+        display: contents;
+      }
+
+      body.idle-mode .live-clock {
+        position: static;
+        grid-column: 1;
+        justify-self: start;
+      }
+
+      body.idle-mode .idle-mobile-bar {
+        display: inline-flex;
+        grid-column: 2;
+        justify-self: center;
+        align-items: center;
+        justify-content: center;
         height: 30px;
         padding: 0 0.72rem;
+        border-radius: 999px;
+        background: rgba(9, 14, 26, 0.48);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        backdrop-filter: blur(10px);
+        font-family: 'JetBrains Mono', monospace;
         font-size: 0.7rem;
-        transform: translate3d(-50%, -4px, 0);
+        font-weight: 700;
+        color: rgba(125, 211, 252, 0.88);
+        letter-spacing: 0.04em;
+        pointer-events: none;
+        animation: fadeInChip 0.28s ease;
       }
 
-      body.idle-mode .idle-airport-badge {
-        opacity: 1;
-        transform: translate3d(-50%, 0, 0);
-      }
-
-      .idle-airport-sep,
-      .idle-airport-city {
-        display: none;
+      @keyframes fadeInChip {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       body.idle-mode .traffic-pill {
-        position: fixed;
-        top: calc(0.65rem + env(safe-area-inset-top));
-        right: calc(1rem + env(safe-area-inset-right));
+        position: static;
+        grid-column: 3;
+        justify-self: end;
       }
 
       .main-stage {
@@ -1269,22 +1299,23 @@
         padding-top: calc(3.15rem + env(safe-area-inset-top));
       }
 
-      /* Conteneur global de la carte entière (photo + télémétrie) animable au swipe */
+      /* Conteneur global de la carte entière (photo + télémétrie) animable façon jeu de cartes */
       .swipe-stage-wrapper {
         flex: 1 1 auto;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
         gap: 0.5rem;
+        transform-origin: 50% 62%;
         will-change: transform, opacity;
       }
 
-      .swipe-stage-wrapper.swipe-out {
-        transition: transform 0.17s cubic-bezier(0.4, 0, 1, 1), opacity 0.16s ease;
+      .swipe-stage-wrapper.card-throw {
+        transition: transform 0.21s cubic-bezier(0.32, 0, 0.67, 0), opacity 0.19s ease;
       }
 
-      .swipe-stage-wrapper.swipe-in {
-        transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+      .swipe-stage-wrapper.card-deal {
+        transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease;
       }
 
       /* 2. Espace photo centré verticalement */
@@ -1363,6 +1394,12 @@
         filter: brightness(0.98) contrast(1.04) saturate(1.06);
         opacity: 0;
         transition: opacity 0.45s ease-in-out;
+      }
+
+      .mobile-card-layer.no-fade,
+      .mobile-ambient-layer.no-fade,
+      .backdrop-layer.no-fade {
+        transition: none !important;
       }
 
       .mobile-card-layer.visible {
@@ -1622,7 +1659,7 @@
     <div class="atc-list" id="atc-list"></div>
   </aside>
 
-  <!-- REPÈRE DISCRET DE LA ZONE QUAND LE BANDEAU EST RÉTRACTÉ -->
+  <!-- REPÈRE DISCRET DE LA ZONE QUAND LE BANDEAU EST RÉTRACTÉ (DESKTOP) -->
   <div class="idle-airport-badge" id="idle-airport-badge" aria-hidden="true">
     <span class="idle-airport-iata" id="idle-iata">TLS</span>
     <span class="idle-airport-sep">•</span>
@@ -1715,6 +1752,8 @@
         <span id="status-label">SCAN EN COURS...</span>
       </div>
       <div class="live-clock" id="live-clock">--:--:--</div>
+      <!-- Vignette aéroport centrée entre l'horloge et la tour de contrôle en mode réduit mobile -->
+      <span class="idle-mobile-bar" id="idle-mobile-iata" aria-hidden="true">TLS</span>
     </div>
 
     <div class="top-right">
@@ -1844,11 +1883,57 @@
     let timerInactivite = null;
     let afficherEtaCycle = false;
 
-    // État mémorisé des derniers avions scannés pour permettre un swipe instantané
+    // État mémorisé des derniers avions scannés & cache instantané des photos
     let dernieresDonneesBrutes = null;
     let derniersAvionsEnVol = [];
     let derniersAvionsAuSol = [];
     let timerPiluleSwipe = null;
+    const cachePhotosParHex = new Map();
+    const imagesEnCacheDom = new Set();
+    const fetchPhotoEnCours = new Set();
+
+    function prechargerImageDansCacheNavigateur(url) {
+      if (!url || imagesEnCacheDom.has(url)) return;
+      imagesEnCacheDom.add(url);
+      const img = new Image();
+      img.decoding = "async";
+      img.src = url;
+    }
+
+    function prechargerPhotosListe(listeAvions, zoneId) {
+      if (!Array.isArray(listeAvions)) return;
+      for (const item of listeAvions) {
+        const hex = item?.vol?.hex;
+        if (!hex) continue;
+        if (item.photo && item.photo.url) {
+          cachePhotosParHex.set(hex, item.photo);
+          prechargerImageDansCacheNavigateur(item.photo.url);
+        }
+      }
+
+      // Précharge aussi en arrière-plan les métadonnées photo des prochains avions en vol
+      const candidats = listeAvions
+        .filter(i => estAppareilEnVolOuMouvement(i.vol))
+        .slice(0, 6);
+
+      for (const item of candidats) {
+        const hex = item?.vol?.hex;
+        if (!hex || cachePhotosParHex.has(hex) || fetchPhotoEnCours.has(hex)) continue;
+        fetchPhotoEnCours.add(hex);
+        fetch(`/api/trafic?zone=${encodeURIComponent(zoneId)}&hex=${encodeURIComponent(hex)}&t=${Date.now()}`, { cache: "no-store" })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (d && d.photo && d.photo.url && d.vol && d.vol.hex === hex) {
+              cachePhotosParHex.set(hex, d.photo);
+              prechargerImageDansCacheNavigateur(d.photo.url);
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            fetchPhotoEnCours.delete(hex);
+          });
+      }
+    }
 
     if (paramZoneUrl) {
       localStorage.setItem("radar_zone_id", paramZoneUrl);
@@ -2024,7 +2109,7 @@
       derniereSignature = "";
       unlockBtn.classList.remove("visible");
       if (dernieresDonneesBrutes) {
-        afficherDonnees(dernieresDonneesBrutes);
+        afficherDonnees(dernieresDonneesBrutes, false);
       }
       actualiser();
     });
@@ -2088,12 +2173,12 @@
       dernierScrollY = scrollActuel;
     }, { passive: true });
 
-    // --- GESTES MOBILES : PULL-TO-REFRESH (BULLE RADAR) & SWIPE ANIMÉ CARTE ENTIÈRE ---
+    // --- GESTES MOBILES : PULL-TO-REFRESH (BULLE RADAR) & SWIPE JEU DE CARTES ---
     const ptrIndicator = document.getElementById("ptr-indicator");
     const swipeStageWrapper = document.getElementById("swipe-stage-wrapper");
     const swipeIndexPill = document.getElementById("swipe-index-pill");
     const PTR_SEUIL = 74;
-    const SWIPE_SEUIL = 52;
+    const SWIPE_SEUIL = 48;
     const BORD_PROTECTION_PX = 26;
 
     let touchDepartX = 0;
@@ -2143,7 +2228,7 @@
       afficherPiluleIndexSwipe(nouvelIdx, pool.length, enVolDisponible);
 
       if (dernieresDonneesBrutes) {
-        afficherDonnees(dernieresDonneesBrutes);
+        afficherDonnees(dernieresDonneesBrutes, true);
       }
       actualiser();
       return true;
@@ -2182,46 +2267,48 @@
     function animerTransitionCarteSwipe(direction) {
       if (!swipeStageWrapper) return;
 
+      // Retour élastique au centre si swipe trop court
       if (direction === 0) {
-        swipeStageWrapper.classList.remove("swipe-out");
-        swipeStageWrapper.classList.add("swipe-in");
-        swipeStageWrapper.style.transform = "translate3d(0, 0, 0)";
+        swipeStageWrapper.classList.remove("card-throw");
+        swipeStageWrapper.classList.add("card-deal");
+        swipeStageWrapper.style.transform = "translate3d(0, 0, 0) rotate(0deg) scale(1)";
         swipeStageWrapper.style.opacity = "1";
         setTimeout(() => {
-          swipeStageWrapper.classList.remove("swipe-in");
-        }, 280);
+          swipeStageWrapper.classList.remove("card-deal");
+        }, 340);
         return;
       }
 
       animationSwipeEnCours = true;
-      // 1. Sortie glissée de la carte actuelle dans le sens du swipe
-      swipeStageWrapper.classList.remove("swipe-in");
-      swipeStageWrapper.classList.add("swipe-out");
-      swipeStageWrapper.style.transform = `translate3d(${direction * -125}px, 0, 0)`;
+      const largeur = window.innerWidth || 390;
+
+      // 1. Éjection façon carte lancée sur le côté avec légère rotation et réduction
+      swipeStageWrapper.classList.remove("card-deal");
+      swipeStageWrapper.classList.add("card-throw");
+      swipeStageWrapper.style.transform = `translate3d(${direction * -largeur * 0.72}px, 14px, 0) rotate(${direction * -8}deg) scale(0.92)`;
       swipeStageWrapper.style.opacity = "0";
 
       setTimeout(() => {
-        // 2. Mise à jour des infos pendant que la carte est hors champ
+        // 2. Injection immédiate de la nouvelle carte (photo + télémétrie) pendant qu'elle est hors champ
         naviguerParSwipe(direction);
 
-        // 3. Positionnement instantané de la nouvelle carte côté opposé
-        swipeStageWrapper.classList.remove("swipe-out");
-        swipeStageWrapper.style.transform = `translate3d(${direction * 115}px, 0, 0)`;
+        // 3. Position de départ de la nouvelle carte venant du côté opposé
+        swipeStageWrapper.classList.remove("card-throw");
+        swipeStageWrapper.style.transform = `translate3d(${direction * largeur * 0.58}px, 10px, 0) rotate(${direction * 6}deg) scale(0.94)`;
         swipeStageWrapper.style.opacity = "0";
 
-        // Force le recalcul de style pour enclencher l'animation d'entrée
         void swipeStageWrapper.offsetWidth;
 
-        // 4. Entrée fluide de la nouvelle carte vers le centre
-        swipeStageWrapper.classList.add("swipe-in");
-        swipeStageWrapper.style.transform = "translate3d(0, 0, 0)";
+        // 4. Mise en place fluide de la nouvelle carte au premier plan
+        swipeStageWrapper.classList.add("card-deal");
+        swipeStageWrapper.style.transform = "translate3d(0, 0, 0) rotate(0deg) scale(1)";
         swipeStageWrapper.style.opacity = "1";
 
         setTimeout(() => {
-          swipeStageWrapper.classList.remove("swipe-in");
+          swipeStageWrapper.classList.remove("card-deal");
           animationSwipeEnCours = false;
-        }, 290);
-      }, 165);
+        }, 350);
+      }, 190);
     }
 
     document.addEventListener("touchstart", (e) => {
@@ -2251,13 +2338,13 @@
 
         // Axe horizontal -> Swipe de toute la carte (hors zone retour navigateur sur les bords)
         if (
-          absX > absY * 1.25 &&
+          absX > absY * 1.2 &&
           touchDepartX > BORD_PROTECTION_PX &&
           touchDepartX < (window.innerWidth - BORD_PROTECTION_PX)
         ) {
           gesteVerrouille = "swipe";
           if (swipeStageWrapper) {
-            swipeStageWrapper.classList.remove("swipe-in", "swipe-out");
+            swipeStageWrapper.classList.remove("card-deal", "card-throw");
           }
         }
         // Axe vertical vers le bas tout en haut -> Pull-to-refresh bulle radar
@@ -2271,12 +2358,14 @@
       if (gesteVerrouille === "swipe") {
         swipeDeltaX = dx;
         const pool = derniersAvionsEnVol.length > 0 ? derniersAvionsEnVol : derniersAvionsAuSol;
-        // Résistance élastique si un seul avion est disponible
-        const facteur = pool.length > 1 ? 0.52 : 0.14;
-        const decalage = Math.max(-135, Math.min(135, dx * facteur));
+        const facteur = pool.length > 1 ? 0.68 : 0.16;
+        const decalage = Math.max(-190, Math.min(190, dx * facteur));
+        const rotation = decalage * 0.032;
+        const echelle = Math.max(0.93, 1 - Math.abs(decalage) / 2400);
+
         if (swipeStageWrapper) {
-          swipeStageWrapper.style.transform = `translate3d(${decalage}px, 0, 0)`;
-          swipeStageWrapper.style.opacity = String(Math.max(0.55, 1 - Math.abs(decalage) / 300));
+          swipeStageWrapper.style.transform = `translate3d(${decalage}px, ${Math.abs(decalage) * 0.04}px, 0) rotate(${rotation}deg) scale(${echelle})`;
+          swipeStageWrapper.style.opacity = String(Math.max(0.55, 1 - Math.abs(decalage) / 360));
         }
       } else if (gesteVerrouille === "ptr") {
         if ((window.scrollY || 0) > 0) return;
@@ -2321,7 +2410,6 @@
     }, { passive: true });
 
     document.addEventListener("click", (e) => {
-      // Évite qu'un relâchement de swipe déclenche un clic parasite
       if (Date.now() - dernierSwipeTimestamp < 320) return;
 
       if (
@@ -2371,6 +2459,7 @@
           document.getElementById("trigger-name").textContent = opt.dataset.city;
           document.getElementById("idle-iata").textContent = id;
           document.getElementById("idle-city").textContent = opt.dataset.city;
+          document.getElementById("idle-mobile-iata").textContent = id;
         }
       });
     }
@@ -2402,6 +2491,7 @@
         localStorage.setItem("radar_zone_id", id);
         hexVerrouille = "";
         hexAutoEnVol = "";
+        cachePhotosParHex.clear();
         unlockBtn.classList.remove("visible");
         synchroniserDropdown(id);
         derniereSignature = "";
@@ -2436,13 +2526,18 @@
       return null;
     }
 
-    function afficherImageSurCalque(url) {
+    function afficherImageSurCalque(url, immediat = false) {
       const bgA = document.getElementById("bg-a");
       const bgB = document.getElementById("bg-b");
       const bgAmbA = document.getElementById("bg-amb-a");
       const bgAmbB = document.getElementById("bg-amb-b");
       const bgCardA = document.getElementById("bg-card-a");
       const bgCardB = document.getElementById("bg-card-b");
+
+      const calques = [bgA, bgB, bgAmbA, bgAmbB, bgCardA, bgCardB];
+      if (immediat) {
+        calques.forEach(el => el.classList.add("no-fade"));
+      }
 
       if (coucheActive === "a") {
         bgB.style.backgroundImage = `url("${url}")`;
@@ -2473,17 +2568,30 @@
 
         coucheActive = "a";
       }
+
+      if (immediat) {
+        requestAnimationFrame(() => {
+          calques.forEach(el => el.classList.remove("no-fade"));
+        });
+      }
     }
 
-    function changerPhoto(photoObj) {
+    function changerPhoto(photoObj, immediat = false) {
       const urlHd = photoObj && photoObj.url ? photoObj.url : "";
       if (!urlHd || urlHd === derniereUrlPhoto) return;
       derniereUrlPhoto = urlHd;
 
+      // Si l'image est déjà préchargée dans le navigateur, affichage instantané sans attendre onload
+      if (imagesEnCacheDom.has(urlHd)) {
+        afficherImageSurCalque(urlHd, immediat);
+        return;
+      }
+
       const imgHd = new Image();
       imgHd.onload = () => {
+        imagesEnCacheDom.add(urlHd);
         if (derniereUrlPhoto === urlHd) {
-          afficherImageSurCalque(urlHd);
+          afficherImageSurCalque(urlHd, immediat);
         }
       };
       imgHd.src = urlHd;
@@ -2618,12 +2726,15 @@
           derniereSignature = "";
           unlockBtn.classList.add("visible");
           fermerDrawerATC();
+          if (dernieresDonneesBrutes) {
+            afficherDonnees(dernieresDonneesBrutes, true);
+          }
           actualiser();
         });
       });
     }
 
-    function afficherDonnees(data) {
+    function afficherDonnees(data, immediat = false) {
       const zoneId = data.zone_id || zoneCourante;
       if (data.zone_id && data.zone_id !== zoneCourante) {
         return;
@@ -2636,6 +2747,13 @@
 
       derniersAvionsEnVol = listeEnVol;
       derniersAvionsAuSol = listeAuSol;
+
+      // Mémorise la photo de l'avion principal retournée par l'API
+      if (data.vol && data.vol.hex && data.photo && data.photo.url) {
+        cachePhotosParHex.set(data.vol.hex, data.photo);
+        prechargerImageDansCacheNavigateur(data.photo.url);
+      }
+      prechargerPhotosListe(listeTriee, zoneId);
 
       verifierAvionsRaresEnZone(listeEnVol, zoneId);
 
@@ -2668,20 +2786,22 @@
 
       if (itemCible && itemCible.vol && data.vol && data.vol.hex !== itemCible.vol.hex) {
         const hexVoulu = itemCible.vol.hex;
-        if (window._dernierFetchPhotoHex !== hexVoulu) {
+        if (window._dernierFetchPhotoHex !== hexVoulu && !cachePhotosParHex.has(hexVoulu)) {
           window._dernierFetchPhotoHex = hexVoulu;
           fetch(`/api/trafic?zone=${encodeURIComponent(zoneId)}&hex=${encodeURIComponent(hexVoulu)}&t=${Date.now()}`, { cache: "no-store" })
             .then(r => r.ok ? r.json() : null)
-            .then(d => { if (d) afficherDonnees(d); })
+            .then(d => { if (d) afficherDonnees(d, immediat); })
             .catch(() => {});
         }
       }
 
       const v = itemCible ? itemCible.vol : data.vol;
       const s = itemCible ? (itemCible.specs || {}) : (data.specs || {});
-      const photo = (itemCible && itemCible.photo && itemCible.photo.url)
-        ? itemCible.photo
-        : ((data.vol && v && data.vol.hex === v.hex) ? data.photo : null);
+      const photo = (v && v.hex && cachePhotosParHex.has(v.hex))
+        ? cachePhotosParHex.get(v.hex)
+        : ((itemCible && itemCible.photo && itemCible.photo.url)
+          ? itemCible.photo
+          : ((data.vol && v && data.vol.hex === v.hex) ? data.photo : null));
 
       const hexActuel = v ? v.hex : "";
       afficherListeTourDeControle(listeEnVol, listeAuSol, hexActuel);
@@ -2778,7 +2898,7 @@
 
       const credit = document.getElementById("photo-credit");
       if (photo && photo.url) {
-        changerPhoto(photo);
+        changerPhoto(photo, immediat);
         credit.textContent = `Photo : ${photo.auteur}`;
       }
     }
@@ -2805,7 +2925,7 @@
         const paramHex = hexCible ? `&hex=${encodeURIComponent(hexCible)}` : "";
         const r = await fetch(`/api/trafic?zone=${encodeURIComponent(zoneCourante)}${paramHex}&t=${Date.now()}`, { cache: "no-store" });
         if (r.ok) {
-          afficherDonnees(await r.json());
+          afficherDonnees(await r.json(), false);
           masquerEcranDemarrage();
         }
       } catch (e) {}
