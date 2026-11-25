@@ -320,7 +320,6 @@
       color: #e2e8f0;
     }
 
-    /* Fond vert uni opaque pour une lisibilité parfaite sans effet translucide */
     .live-clock {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.82rem;
@@ -1850,6 +1849,7 @@
     let verrouTransitionHeader = false;
     let timerVerrouTransition = null;
     let dernierScrollY = window.scrollY || 0;
+    let dernierTouchTimestamp = 0;
 
     function basculerModeVeille(actif) {
       const dejaActif = document.body.classList.contains("idle-mode");
@@ -1905,8 +1905,8 @@
     const ptrText = document.getElementById("ptr-text");
     const PTR_SEUIL = 76;
 
-    let pointeurDepartX = 0;
-    let pointeurDepartY = 0;
+    let touchDepartX = 0;
+    let touchDepartY = 0;
     let ptrActif = false;
     let ptrPret = false;
     let ptrEnCours = false;
@@ -1945,7 +1945,10 @@
     }
 
     document.addEventListener("touchstart", (e) => {
+      dernierTouchTimestamp = Date.now();
       if (e.touches.length !== 1) return;
+      touchDepartX = e.touches[0].clientX;
+      touchDepartY = e.touches[0].clientY;
       ptrActif = false;
       ptrDistance = 0;
 
@@ -1967,8 +1970,8 @@
         return;
       }
 
-      const dy = e.touches[0].clientY - pointeurDepartY;
-      const dx = Math.abs(e.touches[0].clientX - pointeurDepartX);
+      const dy = e.touches[0].clientY - touchDepartY;
+      const dx = Math.abs(e.touches[0].clientX - touchDepartX);
 
       if (dy > 8 && dy > dx * 1.2) {
         ptrDistance = dy * 0.58;
@@ -1980,6 +1983,7 @@
     }, { passive: true });
 
     document.addEventListener("touchend", async (e) => {
+      dernierTouchTimestamp = Date.now();
       if (e.changedTouches.length !== 1) return;
 
       if (ptrActif && ptrDistance > 0) {
@@ -2005,22 +2009,8 @@
       }
     }, { passive: true });
 
-    // Un seul gestionnaire pointerdown/pointerup propre : zéro double déclenchement mobile/PC
-    document.addEventListener("pointerdown", (e) => {
-      if (!e.isPrimary) return;
-      pointeurDepartX = e.clientX;
-      pointeurDepartY = e.clientY;
-    }, { passive: true });
-
-    document.addEventListener("pointerup", (e) => {
-      if (!e.isPrimary) return;
-      const dx = Math.abs(e.clientX - pointeurDepartX);
-      const dy = Math.abs(e.clientY - pointeurDepartY);
-
-      // Ignore si l'utilisateur a glissé/scrollé
-      if (dx > 8 || dy > 8) return;
-
-      // Ignore tout appui sur le header, boutons, menus ou volet latéral
+    // Bascule directe sur click (nativement filtré contre le scroll sur mobile et PC)
+    document.addEventListener("click", (e) => {
       if (
         e.target.closest(".top-bar") ||
         e.target.closest("button") ||
@@ -2032,7 +2022,6 @@
         return;
       }
 
-      // Si le menu aéroport était ouvert, on le ferme simplement
       if (dropdown.classList.contains("open")) {
         dropdown.classList.remove("open");
         trigger.setAttribute("aria-expanded", "false");
@@ -2049,9 +2038,13 @@
       }
     });
 
-    ["mousemove", "keydown"].forEach(evt => {
-      document.addEventListener(evt, reinitialiserInactivite, { passive: true });
-    });
+    // Ignore le mousemove simulé par les navigateurs mobiles juste après un tap tactile
+    document.addEventListener("mousemove", () => {
+      if (Date.now() - dernierTouchTimestamp < 650) return;
+      reinitialiserInactivite();
+    }, { passive: true });
+
+    document.addEventListener("keydown", reinitialiserInactivite, { passive: true });
 
     lancerMinuteurInactivite();
 
