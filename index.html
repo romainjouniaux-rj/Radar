@@ -83,6 +83,13 @@
       justify-content: flex-end;
     }
 
+    .swipe-stage-wrapper {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      width: 100%;
+    }
+
     /* --- BARRE SUPÉRIEURE FIXE --- */
     .top-bar {
       position: fixed;
@@ -1072,6 +1079,7 @@
     @media (max-width: 768px) {
       html, body {
         overscroll-behavior-y: none;
+        overflow-x: hidden;
       }
 
       body {
@@ -1211,7 +1219,7 @@
         background: transparent;
       }
 
-      /* Bandeau rétracté : Horloge verte à gauche, repère subtil aéroport à côté, Tour de contrôle à droite */
+      /* Bandeau rétracté : Horloge à gauche, Aéroport centré entre les deux, Tour de contrôle à droite */
       body.idle-mode .live-clock {
         position: fixed;
         top: calc(0.65rem + env(safe-area-inset-top));
@@ -1220,9 +1228,16 @@
 
       .idle-airport-badge {
         top: calc(0.65rem + env(safe-area-inset-top));
-        left: calc(6.25rem + env(safe-area-inset-left));
-        padding: 0.42rem 0.6rem;
-        font-size: 0.68rem;
+        left: 50%;
+        height: 30px;
+        padding: 0 0.72rem;
+        font-size: 0.7rem;
+        transform: translate3d(-50%, -4px, 0);
+      }
+
+      body.idle-mode .idle-airport-badge {
+        opacity: 1;
+        transform: translate3d(-50%, 0, 0);
       }
 
       .idle-airport-sep,
@@ -1254,7 +1269,25 @@
         padding-top: calc(3.15rem + env(safe-area-inset-top));
       }
 
-      /* 2. Espace photo centré verticalement + suivi physique au swipe horizontal */
+      /* Conteneur global de la carte entière (photo + télémétrie) animable au swipe */
+      .swipe-stage-wrapper {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 0.5rem;
+        will-change: transform, opacity;
+      }
+
+      .swipe-stage-wrapper.swipe-out {
+        transition: transform 0.17s cubic-bezier(0.4, 0, 1, 1), opacity 0.16s ease;
+      }
+
+      .swipe-stage-wrapper.swipe-in {
+        transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+      }
+
+      /* 2. Espace photo centré verticalement */
       .mobile-showcase-slot {
         position: relative;
         display: flex;
@@ -1265,7 +1298,6 @@
         margin-left: -1rem;
         margin-right: -1rem;
         min-height: calc(100vw * 0.62);
-        overflow: hidden;
       }
 
       .mobile-photo-card {
@@ -1273,7 +1305,6 @@
         width: 100%;
         aspect-ratio: 16 / 10;
         overflow: hidden;
-        will-change: transform, opacity;
         mask-image: linear-gradient(
           to bottom,
           transparent 0%,
@@ -1288,10 +1319,6 @@
           black 88%,
           transparent 100%
         );
-      }
-
-      .mobile-photo-card.snapping {
-        transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
       }
 
       /* Pilule d'index discrète lors du swipe latéral (ex: 2 / 5) */
@@ -1723,60 +1750,62 @@
   </header>
 
   <main class="main-stage">
-    <!-- Espace photo centré verticalement + pilule discrète d'index lors du swipe -->
-    <div class="mobile-showcase-slot">
-      <div class="mobile-photo-card" id="mobile-photo-card">
-        <div class="mobile-card-layer" id="bg-card-a"></div>
-        <div class="mobile-card-layer" id="bg-card-b"></div>
+    <div class="swipe-stage-wrapper" id="swipe-stage-wrapper">
+      <!-- Espace photo centré verticalement + pilule discrète d'index lors du swipe -->
+      <div class="mobile-showcase-slot">
+        <div class="mobile-photo-card" id="mobile-photo-card">
+          <div class="mobile-card-layer" id="bg-card-a"></div>
+          <div class="mobile-card-layer" id="bg-card-b"></div>
+        </div>
+        <div class="swipe-index-pill" id="swipe-index-pill" aria-hidden="true"></div>
       </div>
-      <div class="swipe-index-pill" id="swipe-index-pill" aria-hidden="true"></div>
-    </div>
 
-    <div class="bottom-dock">
-      <section class="bottom-left-hud" id="hud-container">
-        <div class="rare-banner" id="rare-banner"></div>
+      <div class="bottom-dock">
+        <section class="bottom-left-hud" id="hud-container">
+          <div class="rare-banner" id="rare-banner"></div>
 
-        <div class="airline-badge">
-          <span id="airline-name">RECHERCHE RADAR...</span>
-          <span class="callsign-pill" id="callsign">---</span>
-          <span class="phase-pill" id="flight-phase">SCAN</span>
-        </div>
-
-        <h1 class="aircraft-title" id="aircraft-model">En attente d'un appareil</h1>
-
-        <div class="route-banner" id="route-banner"></div>
-
-        <div class="aircraft-meta" id="specs-chips">
-          <span class="meta-chip">OACI : —</span>
-          <span class="meta-chip">IMMAT : —</span>
-        </div>
-
-        <div class="telemetry-wrapper">
-          <div class="live-cards-grid" id="live-cards-grid">
-            <div class="metric-card is-live">
-              <div class="metric-label">Distance axe</div>
-              <div class="metric-value">—<span class="metric-unit">km</span></div>
-            </div>
-            <div class="metric-card is-live">
-              <div class="metric-label">Altitude</div>
-              <div class="metric-value">—<span class="metric-unit">ft</span></div>
-            </div>
-            <div class="metric-card is-live">
-              <div class="metric-label">Vitesse sol</div>
-              <div class="metric-value">—<span class="metric-unit">kts</span></div>
-            </div>
-            <div class="metric-card is-live">
-              <div class="metric-label">Cap / Vario</div>
-              <div class="metric-value">—<span class="metric-unit">°</span></div>
-            </div>
+          <div class="airline-badge">
+            <span id="airline-name">RECHERCHE RADAR...</span>
+            <span class="callsign-pill" id="callsign">---</span>
+            <span class="phase-pill" id="flight-phase">SCAN</span>
           </div>
 
-          <div class="specs-divider" id="specs-divider"></div>
-          <div class="specs-cards-grid" id="specs-cards-grid"></div>
-        </div>
+          <h1 class="aircraft-title" id="aircraft-model">En attente d'un appareil</h1>
 
-        <div class="photo-credit" id="photo-credit"></div>
-      </section>
+          <div class="route-banner" id="route-banner"></div>
+
+          <div class="aircraft-meta" id="specs-chips">
+            <span class="meta-chip">OACI : —</span>
+            <span class="meta-chip">IMMAT : —</span>
+          </div>
+
+          <div class="telemetry-wrapper">
+            <div class="live-cards-grid" id="live-cards-grid">
+              <div class="metric-card is-live">
+                <div class="metric-label">Distance axe</div>
+                <div class="metric-value">—<span class="metric-unit">km</span></div>
+              </div>
+              <div class="metric-card is-live">
+                <div class="metric-label">Altitude</div>
+                <div class="metric-value">—<span class="metric-unit">ft</span></div>
+              </div>
+              <div class="metric-card is-live">
+                <div class="metric-label">Vitesse sol</div>
+                <div class="metric-value">—<span class="metric-unit">kts</span></div>
+              </div>
+              <div class="metric-card is-live">
+                <div class="metric-label">Cap / Vario</div>
+                <div class="metric-value">—<span class="metric-unit">°</span></div>
+              </div>
+            </div>
+
+            <div class="specs-divider" id="specs-divider"></div>
+            <div class="specs-cards-grid" id="specs-cards-grid"></div>
+          </div>
+
+          <div class="photo-credit" id="photo-credit"></div>
+        </section>
+      </div>
     </div>
   </main>
 
@@ -2059,9 +2088,9 @@
       dernierScrollY = scrollActuel;
     }, { passive: true });
 
-    // --- GESTES MOBILES : PULL-TO-REFRESH (BULLE RADAR) & SWIPE LATÉRAL ENTRE AVIONS ---
+    // --- GESTES MOBILES : PULL-TO-REFRESH (BULLE RADAR) & SWIPE ANIMÉ CARTE ENTIÈRE ---
     const ptrIndicator = document.getElementById("ptr-indicator");
-    const mobilePhotoCard = document.getElementById("mobile-photo-card");
+    const swipeStageWrapper = document.getElementById("swipe-stage-wrapper");
     const swipeIndexPill = document.getElementById("swipe-index-pill");
     const PTR_SEUIL = 74;
     const SWIPE_SEUIL = 52;
@@ -2075,6 +2104,7 @@
     let ptrDistance = 0;
     let swipeDeltaX = 0;
     let dernierSwipeTimestamp = 0;
+    let animationSwipeEnCours = false;
 
     function afficherPiluleIndexSwipe(indexZero, total, enVol) {
       if (!swipeIndexPill || total <= 0) return;
@@ -2149,28 +2179,54 @@
       }, 340);
     }
 
-    function reinitialiserCarteSwipe(directionAnimation) {
-      if (!mobilePhotoCard) return;
-      mobilePhotoCard.classList.add("snapping");
-      if (directionAnimation !== 0) {
-        // Glissement léger de sortie puis retour au centre avec la nouvelle photo
-        mobilePhotoCard.style.transform = `translate3d(${directionAnimation * -42}px, 0, 0)`;
-        mobilePhotoCard.style.opacity = "0.55";
+    function animerTransitionCarteSwipe(direction) {
+      if (!swipeStageWrapper) return;
+
+      if (direction === 0) {
+        swipeStageWrapper.classList.remove("swipe-out");
+        swipeStageWrapper.classList.add("swipe-in");
+        swipeStageWrapper.style.transform = "translate3d(0, 0, 0)";
+        swipeStageWrapper.style.opacity = "1";
         setTimeout(() => {
-          mobilePhotoCard.style.transform = "translate3d(0, 0, 0)";
-          mobilePhotoCard.style.opacity = "1";
-          setTimeout(() => mobilePhotoCard.classList.remove("snapping"), 280);
-        }, 90);
-      } else {
-        mobilePhotoCard.style.transform = "translate3d(0, 0, 0)";
-        mobilePhotoCard.style.opacity = "1";
-        setTimeout(() => mobilePhotoCard.classList.remove("snapping"), 280);
+          swipeStageWrapper.classList.remove("swipe-in");
+        }, 280);
+        return;
       }
+
+      animationSwipeEnCours = true;
+      // 1. Sortie glissée de la carte actuelle dans le sens du swipe
+      swipeStageWrapper.classList.remove("swipe-in");
+      swipeStageWrapper.classList.add("swipe-out");
+      swipeStageWrapper.style.transform = `translate3d(${direction * -125}px, 0, 0)`;
+      swipeStageWrapper.style.opacity = "0";
+
+      setTimeout(() => {
+        // 2. Mise à jour des infos pendant que la carte est hors champ
+        naviguerParSwipe(direction);
+
+        // 3. Positionnement instantané de la nouvelle carte côté opposé
+        swipeStageWrapper.classList.remove("swipe-out");
+        swipeStageWrapper.style.transform = `translate3d(${direction * 115}px, 0, 0)`;
+        swipeStageWrapper.style.opacity = "0";
+
+        // Force le recalcul de style pour enclencher l'animation d'entrée
+        void swipeStageWrapper.offsetWidth;
+
+        // 4. Entrée fluide de la nouvelle carte vers le centre
+        swipeStageWrapper.classList.add("swipe-in");
+        swipeStageWrapper.style.transform = "translate3d(0, 0, 0)";
+        swipeStageWrapper.style.opacity = "1";
+
+        setTimeout(() => {
+          swipeStageWrapper.classList.remove("swipe-in");
+          animationSwipeEnCours = false;
+        }, 290);
+      }, 165);
     }
 
     document.addEventListener("touchstart", (e) => {
       dernierTouchTimestamp = Date.now();
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || animationSwipeEnCours) return;
 
       touchDepartX = e.touches[0].clientX;
       touchDepartY = e.touches[0].clientY;
@@ -2180,7 +2236,7 @@
     }, { passive: true });
 
     document.addEventListener("touchmove", (e) => {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || animationSwipeEnCours) return;
       if (window.innerWidth > 768) return;
       if (atcDrawer.classList.contains("open") || dropdown.classList.contains("open")) return;
 
@@ -2193,14 +2249,16 @@
       if (!gesteVerrouille) {
         if (absX < 10 && absY < 10) return;
 
-        // Axe horizontal -> Swipe entre les avions (hors zone retour navigateur sur les bords)
+        // Axe horizontal -> Swipe de toute la carte (hors zone retour navigateur sur les bords)
         if (
           absX > absY * 1.25 &&
           touchDepartX > BORD_PROTECTION_PX &&
           touchDepartX < (window.innerWidth - BORD_PROTECTION_PX)
         ) {
           gesteVerrouille = "swipe";
-          if (mobilePhotoCard) mobilePhotoCard.classList.remove("snapping");
+          if (swipeStageWrapper) {
+            swipeStageWrapper.classList.remove("swipe-in", "swipe-out");
+          }
         }
         // Axe vertical vers le bas tout en haut -> Pull-to-refresh bulle radar
         else if (dy > 0 && absY > absX * 1.2 && (window.scrollY || 0) <= 0 && !ptrEnCours) {
@@ -2214,11 +2272,11 @@
         swipeDeltaX = dx;
         const pool = derniersAvionsEnVol.length > 0 ? derniersAvionsEnVol : derniersAvionsAuSol;
         // Résistance élastique si un seul avion est disponible
-        const facteur = pool.length > 1 ? 0.34 : 0.1;
-        const decalage = Math.max(-75, Math.min(75, dx * facteur));
-        if (mobilePhotoCard) {
-          mobilePhotoCard.style.transform = `translate3d(${decalage}px, 0, 0)`;
-          mobilePhotoCard.style.opacity = String(Math.max(0.72, 1 - Math.abs(decalage) / 260));
+        const facteur = pool.length > 1 ? 0.52 : 0.14;
+        const decalage = Math.max(-135, Math.min(135, dx * facteur));
+        if (swipeStageWrapper) {
+          swipeStageWrapper.style.transform = `translate3d(${decalage}px, 0, 0)`;
+          swipeStageWrapper.style.opacity = String(Math.max(0.55, 1 - Math.abs(decalage) / 300));
         }
       } else if (gesteVerrouille === "ptr") {
         if ((window.scrollY || 0) > 0) return;
@@ -2233,12 +2291,12 @@
 
       if (gesteVerrouille === "swipe") {
         dernierSwipeTimestamp = Date.now();
-        if (Math.abs(swipeDeltaX) >= SWIPE_SEUIL) {
+        const pool = derniersAvionsEnVol.length > 0 ? derniersAvionsEnVol : derniersAvionsAuSol;
+        if (Math.abs(swipeDeltaX) >= SWIPE_SEUIL && pool.length > 1) {
           const direction = swipeDeltaX < 0 ? 1 : -1;
-          const changeReussi = naviguerParSwipe(direction);
-          reinitialiserCarteSwipe(changeReussi ? direction : 0);
+          animerTransitionCarteSwipe(direction);
         } else {
-          reinitialiserCarteSwipe(0);
+          animerTransitionCarteSwipe(0);
         }
       } else if (gesteVerrouille === "ptr" && ptrDistance > 0) {
         if (ptrPret && !ptrEnCours) {
