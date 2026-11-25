@@ -106,7 +106,7 @@
     }
 
     .fadeable-ui {
-      transition: opacity 0.4s ease, transform 0.4s ease;
+      transition: opacity 0.38s ease, transform 0.38s ease;
     }
 
     body.idle-mode .fadeable-ui {
@@ -1055,7 +1055,7 @@
         background: transparent;
       }
 
-      /* Bandeau masqué (veille ou scroll bas) : Horloge en haut à gauche, Tour de contrôle en haut à droite */
+      /* Bandeau masqué : Horloge en haut à gauche, Tour de contrôle en haut à droite */
       body.idle-mode .live-clock {
         position: fixed;
         top: calc(0.65rem + env(safe-area-inset-top));
@@ -1072,14 +1072,13 @@
         height: auto;
         min-height: 100dvh;
         justify-content: space-between;
-        /* Démarre sous tout le header déployé (y compris Alerte + Tour) pour ne jamais mordre sur l'image */
         padding:
           calc(7.6rem + env(safe-area-inset-top))
           calc(1rem + env(safe-area-inset-right))
           calc(1.35rem + env(safe-area-inset-bottom))
           calc(1rem + env(safe-area-inset-left));
         gap: 0.5rem;
-        transition: padding-top 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+        transition: padding-top 0.38s cubic-bezier(0.22, 1, 0.36, 1);
       }
 
       /* Quand le header se rétracte, le haut libère la place jusqu'à la ligne Horloge / Tour */
@@ -1736,11 +1735,15 @@
       actualiser();
     });
 
-    // --- MODE ÉCRAN DE VEILLE & MASQUAGE AU SCROLL (ANIMATION FLIP) ---
+    // --- MODE ÉCRAN DE VEILLE, CLIC ÉCRAN & SCROLL SANS BUG (ANIMATION FLIP) ---
     const dropdown = document.getElementById("airport-dropdown");
     const trigger = document.getElementById("airport-trigger");
     const options = document.querySelectorAll(".airport-option");
     const liveClock = document.getElementById("live-clock");
+
+    let verrouTransitionHeader = false;
+    let timerVerrouTransition = null;
+    let dernierScrollY = window.scrollY || 0;
 
     function animerFlipElement(el, avant) {
       const apres = el.getBoundingClientRect();
@@ -1749,16 +1752,24 @@
 
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         el.style.transition = "none";
-        el.style.transform = `translate(${dx}px, ${dy}px)`;
-        el.offsetHeight;
-        el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
-        el.style.transform = "translate(0, 0)";
+        el.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+        el.getBoundingClientRect();
+        el.style.transition = "transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)";
+        el.style.transform = "translate3d(0, 0, 0)";
       }
     }
 
     function basculerModeVeille(actif) {
       const dejaActif = document.body.classList.contains("idle-mode");
       if (actif === dejaActif) return;
+
+      // Verrouille l'écouteur de scroll pendant l'animation de padding-top pour éviter tout rebond
+      verrouTransitionHeader = true;
+      clearTimeout(timerVerrouTransition);
+      timerVerrouTransition = setTimeout(() => {
+        verrouTransitionHeader = false;
+        dernierScrollY = Math.max(0, window.scrollY || 0);
+      }, 450);
 
       const avantClock = liveClock.getBoundingClientRect();
       const avantTraffic = trafficBtn.getBoundingClientRect();
@@ -1783,19 +1794,21 @@
       lancerMinuteurInactivite();
     }
 
-    let dernierScrollY = window.scrollY || 0;
+    // Détection propre du défilement (masque en descendant, réaffiche en remontant)
     window.addEventListener("scroll", () => {
+      if (verrouTransitionHeader) return;
+
       const scrollActuel = Math.max(0, window.scrollY || 0);
       const delta = scrollActuel - dernierScrollY;
 
-      if (Math.abs(delta) < 6) return;
+      if (Math.abs(delta) < 10) return;
 
-      if (delta > 0 && scrollActuel > 36) {
+      if (delta > 0 && scrollActuel > 24) {
         if (!dropdown.classList.contains("open") && !atcDrawer.classList.contains("open")) {
           clearTimeout(timerInactivite);
           basculerModeVeille(true);
         }
-      } else if (delta < 0 || scrollActuel <= 20) {
+      } else if (delta < 0) {
         basculerModeVeille(false);
         lancerMinuteurInactivite();
       }
@@ -1803,17 +1816,60 @@
       dernierScrollY = scrollActuel;
     }, { passive: true });
 
-    ["mousemove", "mousedown", "keydown"].forEach(evt => {
-      document.addEventListener(evt, reinitialiserInactivite, { passive: true });
-    });
+    // Un clic / tap n'importe où sur l'écran bascule l'affichage du header
+    let toucheDepartX = 0;
+    let toucheDepartY = 0;
+    let dernierTapTimestamp = 0;
 
     document.addEventListener("touchstart", (e) => {
-      if (e.target.closest("#airport-dropdown") || e.target.closest("#atc-drawer") || e.target.closest(".top-bar")) {
-        reinitialiserInactivite();
-      } else if ((window.scrollY || 0) <= 20) {
-        reinitialiserInactivite();
+      if (e.touches.length === 1) {
+        toucheDepartX = e.touches[0].clientX;
+        toucheDepartY = e.touches[0].clientY;
       }
     }, { passive: true });
+
+    function gererClicBasculerHeader(e) {
+      // Ignore les clics sur les contrôles interactifs, menus et volets
+      if (
+        e.target.closest("button") ||
+        e.target.closest(".airport-dropdown") ||
+        e.target.closest("#atc-drawer") ||
+        e.target.closest("#atc-backdrop") ||
+        e.target.closest("#boot-screen")
+      ) {
+        return;
+      }
+
+      const estMasque = document.body.classList.contains("idle-mode");
+      if (estMasque) {
+        basculerModeVeille(false);
+        lancerMinuteurInactivite();
+      } else {
+        clearTimeout(timerInactivite);
+        basculerModeVeille(true);
+      }
+    }
+
+    document.addEventListener("touchend", (e) => {
+      if (e.changedTouches.length !== 1) return;
+      const dx = Math.abs(e.changedTouches[0].clientX - toucheDepartX);
+      const dy = Math.abs(e.changedTouches[0].clientY - toucheDepartY);
+      // Vérifie que c'est bien un tap et non un scroll/swipe
+      if (dx < 10 && dy < 10) {
+        dernierTapTimestamp = Date.now();
+        gererClicBasculerHeader(e);
+      }
+    }, { passive: true });
+
+    document.addEventListener("click", (e) => {
+      // Évite le double déclenchement click après touchend sur mobile
+      if (Date.now() - dernierTapTimestamp < 450) return;
+      gererClicBasculerHeader(e);
+    });
+
+    ["mousemove", "keydown"].forEach(evt => {
+      document.addEventListener(evt, reinitialiserInactivite, { passive: true });
+    });
 
     lancerMinuteurInactivite();
 
