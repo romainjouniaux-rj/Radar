@@ -556,6 +556,16 @@
       gap: 0.55rem;
     }
 
+    .atc-section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 0.35rem 0 0.15rem;
+      padding-left: 0.2rem;
+    }
+
     .atc-card {
       width: 100%;
       background: rgba(15, 23, 42, 0.72);
@@ -589,7 +599,7 @@
     }
 
     .atc-card.is-parked {
-      opacity: 0.65;
+      opacity: 0.62;
     }
 
     .atc-card.is-parked:hover,
@@ -721,6 +731,12 @@
       color: #6ee7b7;
       padding: 0.16rem 0.55rem;
       border-radius: 6px;
+    }
+
+    .phase-pill.is-ground {
+      background: rgba(148, 163, 184, 0.18);
+      border-color: rgba(148, 163, 184, 0.38);
+      color: #cbd5e1;
     }
 
     .aircraft-title {
@@ -1685,6 +1701,7 @@
       navigator.serviceWorker.addEventListener("message", (event) => {
         if (event.data?.type === "VERROUILLER_AVION_RARE" && event.data.hex) {
           hexVerrouille = event.data.hex;
+          hexAutoEnVol = "";
           derniereSignature = "";
           unlockBtn.classList.add("visible");
           actualiser();
@@ -1702,6 +1719,7 @@
     let derniereSignature = "";
     let zoneCourante = paramZoneUrl || localStorage.getItem("radar_zone_id") || "TLS";
     let hexVerrouille = paramHexUrl || "";
+    let hexAutoEnVol = "";
     let timerInactivite = null;
     let afficherEtaCycle = false;
 
@@ -1710,43 +1728,34 @@
       fetch(`/api/zone?id=${encodeURIComponent(paramZoneUrl)}`).catch(() => {});
     }
 
-    // --- ALTITUDE TERRAIN DES AÉROPORTS (FT) POUR FILTRER LES AVIONS PARKÉS ---
-    const ALTITUDE_TERRAIN_FT = {
-      TLS: 499,
-      DXB: 62,
-      CDG: 392,
-      LHR: 83,
-      JFK: 13,
-      SIN: 22
-    };
-
-    function estAppareilEnVolActif(vol, zoneId) {
+    // --- FILTRE STRICT : APPAREILS EN VOL / EN MOUVEMENT VS PARKÉS AU SOL ---
+    function estAppareilEnVolOuMouvement(vol) {
       if (!vol) return false;
-      const phase = (vol.phase || "").toUpperCase();
-      if (phase.includes("SOL") || phase.includes("PARQ") || phase.includes("GROUND")) {
-        return false;
-      }
 
       const alt = Number(vol.altitude_ft || 0);
       const spd = Number(vol.vitesse_kts || 0);
-      const vs = Math.abs(Number(vol.taux_vertical || 0));
-      const altTerrain = ALTITUDE_TERRAIN_FT[zoneId] || 300;
-      const hauteurSolEstimee = alt - altTerrain;
+      const phase = (vol.phase || "").toUpperCase();
 
-      // En l'air (> 250 ft au-dessus de la piste), en course de décollage (>= 50 kts) ou en montée/descente franche
-      if (hauteurSolEstimee > 250) return true;
-      if (spd >= 50) return true;
-      if (vs >= 250 && alt > altTerrain + 80) return true;
+      // Si le transpondeur indique explicitement au sol et vitesse quasi nulle
+      if ((phase.includes("SOL") || phase.includes("PARQ") || phase.includes("GROUND")) && spd < 30) {
+        return false;
+      }
+
+      // Un avion en vol (même très haute altitude) a toujours une altitude >= 1400 ft OU une vitesse >= 30 kts
+      // Un avion parké sur les pistes d'essais (ex: Airbus TLS à ~500-900 ft baro) a toujours spd < 30 kts et alt < 1400 ft
+      if (alt >= 1400 || spd >= 30) {
+        return true;
+      }
 
       return false;
     }
 
-    function prioriserAvionsEnVol(listeAvions, zoneId) {
+    function trierListeAvions(listeAvions) {
       if (!Array.isArray(listeAvions) || listeAvions.length === 0) return [];
       return [...listeAvions].sort((a, b) => {
-        const actifA = estAppareilEnVolActif(a.vol, zoneId) ? 0 : 1;
-        const actifB = estAppareilEnVolActif(b.vol, zoneId) ? 0 : 1;
-        if (actifA !== actifB) return actifA - actifB;
+        const enVolA = estAppareilEnVolOuMouvement(a.vol) ? 0 : 1;
+        const enVolB = estAppareilEnVolOuMouvement(b.vol) ? 0 : 1;
+        if (enVolA !== enVolB) return enVolA - enVolB;
         return Number(a.vol?.distance_km || 9999) - Number(b.vol?.distance_km || 9999);
       });
     }
@@ -1783,7 +1792,7 @@
         majBoutonAlertes();
         envoyerNotificationRare(
           "Radar Approche • Alertes activées",
-          `Vous serez averti dès qu'un appareil rare (Beluga, A380, prototype...) entre dans le secteur ${zoneCourante}.`,
+          `Vous serez averti dès qu'un appareil rare (Beluga, A380, prototype...) entre en vol dans le secteur ${zoneCourante}.`,
           "",
           zoneCourante
         );
@@ -1817,8 +1826,8 @@
       for (const item of listeAvions) {
         const av = item.vol;
         if (!av || !av.badge_rare || !av.hex) continue;
-        // Évite de notifier en boucle les Beluga / prototypes parkés au sol à Toulouse
-        if (!estAppareilEnVolActif(av, zoneId)) continue;
+        // Ne notifie que si l'avion rare est réellement en vol / en mouvement
+        if (!estAppareilEnVolOuMouvement(av)) continue;
 
         const cleUniq = `${zoneId}_${av.hex}`;
         if (raresDejaNotifies.has(cleUniq)) continue;
@@ -1888,6 +1897,7 @@
 
     unlockBtn.addEventListener("click", () => {
       hexVerrouille = "";
+      hexAutoEnVol = "";
       derniereSignature = "";
       unlockBtn.classList.remove("visible");
       actualiser();
@@ -2137,6 +2147,7 @@
 
         localStorage.setItem("radar_zone_id", id);
         hexVerrouille = "";
+        hexAutoEnVol = "";
         unlockBtn.classList.remove("visible");
         synchroniserDropdown(id);
         derniereSignature = "";
@@ -2297,47 +2308,59 @@
       }
     }
 
-    function afficherListeTourDeControle(listeAvions, hexActuel, zoneId) {
+    function rendreCarteATC(item, hexActuel, enVol) {
+      const av = item.vol;
+      const sp = item.specs || {};
+      const modele = `${sp.manufacturer || ""} ${sp.model || av.icao}`.trim();
+      const trajet = (av.origine || av.destination)
+        ? `${av.origine ? av.origine.code : "?"} → ${av.destination ? av.destination.code : "?"}`
+        : (enVol ? av.phase : "AU SOL / PARKÉ");
+      const actif = av.hex === hexActuel;
+
+      return `
+        <button type="button" class="atc-card ${actif ? "selected" : ""} ${av.badge_rare ? "is-rare" : ""} ${!enVol ? "is-parked" : ""}" data-hex="${av.hex}">
+          <div class="atc-card-top">
+            <span class="atc-callsign">${av.indicatif}${av.compagnie ? " • " + av.compagnie : ""}</span>
+            <span class="atc-dist">${Number(av.distance_km).toFixed(1)} km</span>
+          </div>
+          <div class="atc-model">${modele}</div>
+          <div class="atc-sub">
+            <span>${trajet} • ${enVol ? (formaterNombre(av.altitude_ft) || 0) + " ft" : "Au sol"}</span>
+            <span>${formaterNombre(av.vitesse_kts) || 0} kts</span>
+          </div>
+          ${av.badge_rare ? `<div class="atc-rare-tag">${av.badge_rare}</div>` : ""}
+        </button>
+      `;
+    }
+
+    function afficherListeTourDeControle(listeEnVol, listeAuSol, hexActuel) {
       const container = document.getElementById("atc-list");
       const title = document.getElementById("atc-drawer-title");
-      const nb = (listeAvions || []).length;
-      const nbEnVol = (listeAvions || []).filter(i => estAppareilEnVolActif(i.vol, zoneId)).length;
-      title.textContent = `${nbEnVol} en vol • ${nb} en zone`;
+      const nbEnVol = listeEnVol.length;
+      const nbAuSol = listeAuSol.length;
+      title.textContent = `${nbEnVol} en vol • ${nbAuSol} au sol`;
 
-      if (!nb) {
+      if (nbEnVol === 0 && nbAuSol === 0) {
         container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem 0;">Aucun appareil détecté dans cette zone pour le moment.</div>`;
         return;
       }
 
-      container.innerHTML = listeAvions.map(item => {
-        const av = item.vol;
-        const sp = item.specs || {};
-        const enVol = estAppareilEnVolActif(av, zoneId);
-        const modele = `${sp.manufacturer || ""} ${sp.model || av.icao}`.trim();
-        const trajet = (av.origine || av.destination)
-          ? `${av.origine ? av.origine.code : "?"} → ${av.destination ? av.destination.code : "?"}`
-          : (enVol ? av.phase : "AU SOL / PARKÉ");
-        const actif = av.hex === hexActuel;
+      let html = "";
+      if (nbEnVol > 0) {
+        html += `<div class="atc-section-label">En vol / Approche / Décollage (${nbEnVol})</div>`;
+        html += listeEnVol.map(item => rendreCarteATC(item, hexActuel, true)).join("");
+      }
+      if (nbAuSol > 0) {
+        html += `<div class="atc-section-label">Au sol / Parkés (${nbAuSol})</div>`;
+        html += listeAuSol.map(item => rendreCarteATC(item, hexActuel, false)).join("");
+      }
 
-        return `
-          <button type="button" class="atc-card ${actif ? "selected" : ""} ${av.badge_rare ? "is-rare" : ""} ${!enVol ? "is-parked" : ""}" data-hex="${av.hex}">
-            <div class="atc-card-top">
-              <span class="atc-callsign">${av.indicatif}${av.compagnie ? " • " + av.compagnie : ""}</span>
-              <span class="atc-dist">${Number(av.distance_km).toFixed(1)} km</span>
-            </div>
-            <div class="atc-model">${modele}</div>
-            <div class="atc-sub">
-              <span>${trajet} • ${enVol ? (formaterNombre(av.altitude_ft) || 0) + " ft" : "Au sol"}</span>
-              <span>${formaterNombre(av.vitesse_kts) || 0} kts</span>
-            </div>
-            ${av.badge_rare ? `<div class="atc-rare-tag">${av.badge_rare}</div>` : ""}
-          </button>
-        `;
-      }).join("");
+      container.innerHTML = html;
 
       container.querySelectorAll(".atc-card").forEach(btn => {
         btn.addEventListener("click", () => {
           hexVerrouille = btn.dataset.hex;
+          hexAutoEnVol = "";
           derniereSignature = "";
           unlockBtn.classList.add("visible");
           fermerDrawerATC();
@@ -2352,44 +2375,75 @@
         return;
       }
 
-      // Trie les appareils pour privilégier ceux en l'air / approche / décollage avant les appareils parkés
-      const listeTriee = prioriserAvionsEnVol(data.liste_avions, zoneId);
+      const listeTriee = trierListeAvions(data.liste_avions);
+      const listeEnVol = listeTriee.filter(i => estAppareilEnVolOuMouvement(i.vol));
+      const listeAuSol = listeTriee.filter(i => !estAppareilEnVolOuMouvement(i.vol));
 
-      verifierAvionsRaresEnZone(listeTriee, zoneId);
+      verifierAvionsRaresEnZone(listeEnVol, zoneId);
 
-      const nb = data.nb_avions || listeTriee.length || 0;
-      document.getElementById("traffic-count").textContent = `${nb} avion${nb > 1 ? "s" : ""} en zone`;
+      // Affiche en priorité le compteur d'avions en vol dans le bouton Tour de contrôle
+      const trafficLabel = listeEnVol.length > 0
+        ? `${listeEnVol.length} en vol${listeAuSol.length > 0 ? " • +" + listeAuSol.length + " sol" : ""}`
+        : `${listeAuSol.length} au sol`;
+      document.getElementById("traffic-count").textContent = trafficLabel;
 
-      if (hexVerrouille && !data.verrouille && data.statut === "actif") {
+      // Si l'utilisateur avait verrouillé un avion qui a disparu, on déverrouille
+      if (hexVerrouille) {
         const existeEncore = listeTriee.some(i => i.vol && i.vol.hex === hexVerrouille);
-        if (!existeEncore) {
+        if (!existeEncore && listeTriee.length > 0) {
           hexVerrouille = "";
           unlockBtn.classList.remove("visible");
         }
       }
 
-      // Sélectionne l'appareil verrouillé si demandé, sinon le meilleur appareil en l'air (ou parké en dernier recours)
+      // Choix de l'avion affiché :
+      // 1. Verrouillage manuel de l'utilisateur
+      // 2. Sinon l'avion EN VOL / EN APPROCHE / EN DÉCOLLAGE / EN ALTITUDE le plus proche
+      // 3. En tout dernier recours uniquement (0 avion en l'air), un avion parké au sol
       let itemCible = null;
       if (hexVerrouille) {
         itemCible = listeTriee.find(i => i.vol && i.vol.hex === hexVerrouille) || null;
       }
-      if (!itemCible && listeTriee.length > 0) {
-        itemCible = listeTriee[0];
+      if (!itemCible) {
+        if (listeEnVol.length > 0) {
+          itemCible = listeEnVol[0];
+          hexAutoEnVol = itemCible.vol.hex;
+        } else if (listeAuSol.length > 0) {
+          itemCible = listeAuSol[0];
+          hexAutoEnVol = "";
+        } else {
+          hexAutoEnVol = "";
+        }
+      }
+
+      // Si le serveur a renvoyé un avion parké en vedette alors qu'on a sélectionné un avion en vol,
+      // on relance immédiatement un fetch ciblant l'avion en vol pour récupérer sa vraie photo HD !
+      if (itemCible && itemCible.vol && data.vol && data.vol.hex !== itemCible.vol.hex) {
+        const hexVoulu = itemCible.vol.hex;
+        if (window._dernierFetchPhotoHex !== hexVoulu) {
+          window._dernierFetchPhotoHex = hexVoulu;
+          fetch(`/api/trafic?zone=${encodeURIComponent(zoneId)}&hex=${encodeURIComponent(hexVoulu)}&t=${Date.now()}`, { cache: "no-store" })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) afficherDonnees(d); })
+            .catch(() => {});
+        }
       }
 
       const v = itemCible ? itemCible.vol : data.vol;
       const s = itemCible ? (itemCible.specs || {}) : (data.specs || {});
-      const photo = (itemCible && itemCible.photo && itemCible.photo.url) ? itemCible.photo : data.photo;
+      const photo = (itemCible && itemCible.photo && itemCible.photo.url)
+        ? itemCible.photo
+        : ((data.vol && v && data.vol.hex === v.hex) ? data.photo : null);
 
       const hexActuel = v ? v.hex : "";
-      afficherListeTourDeControle(listeTriee, hexActuel, zoneId);
+      afficherListeTourDeControle(listeEnVol, listeAuSol, hexActuel);
 
-      if ((data.statut !== "actif" && !v) || !v) {
+      if (!v) {
         document.getElementById("status-label").textContent = `SCAN EN COURS • ${data.maj_serveur || ""}`;
         return;
       }
 
-      const enVolActif = estAppareilEnVolActif(v, zoneId);
+      const enVolActif = estAppareilEnVolOuMouvement(v);
       document.getElementById("status-label").textContent = `${data.source_api || "LIVE"} • ${data.maj_serveur || ""}`;
       construireGrillesSeparees(v, s);
 
@@ -2418,7 +2472,11 @@
         document.getElementById("callsign").textContent = v.num_vol && v.num_vol !== v.indicatif
           ? `${v.indicatif} (${v.num_vol})`
           : v.indicatif;
-        document.getElementById("flight-phase").textContent = enVolActif ? v.phase : "AU SOL / PARKÉ";
+
+        const phaseEl = document.getElementById("flight-phase");
+        phaseEl.textContent = enVolActif ? v.phase : "AU SOL / PARKÉ";
+        phaseEl.classList.toggle("is-ground", !enVolActif);
+
         document.getElementById("aircraft-model").textContent = `${s.manufacturer || ""} ${s.model || v.icao}`.trim();
 
         const routeBanner = document.getElementById("route-banner");
@@ -2495,7 +2553,8 @@
 
     async function actualiser() {
       try {
-        const paramHex = hexVerrouille ? `&hex=${encodeURIComponent(hexVerrouille)}` : "";
+        const hexCible = hexVerrouille || hexAutoEnVol;
+        const paramHex = hexCible ? `&hex=${encodeURIComponent(hexCible)}` : "";
         const r = await fetch(`/api/trafic?zone=${encodeURIComponent(zoneCourante)}${paramHex}&t=${Date.now()}`, { cache: "no-store" });
         if (r.ok) {
           afficherDonnees(await r.json());
