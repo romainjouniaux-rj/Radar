@@ -134,6 +134,51 @@
       gap: 0.55rem;
     }
 
+    /* --- REPÈRE SUBTIL AÉROPORT EN MODE VEILLE / RÉTRACTÉ --- */
+    .idle-airport-badge {
+      position: fixed;
+      top: calc(1.3rem + env(safe-area-inset-top));
+      left: calc(8.45rem + env(safe-area-inset-left));
+      z-index: 27;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+      padding: 0.42rem 0.78rem;
+      border-radius: 999px;
+      background: rgba(9, 14, 26, 0.44);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      backdrop-filter: blur(10px);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      color: rgba(226, 232, 240, 0.68);
+      letter-spacing: 0.02em;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: opacity 0.38s ease, transform 0.38s ease;
+    }
+
+    body.idle-mode .idle-airport-badge {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .idle-airport-iata {
+      font-weight: 700;
+      color: rgba(125, 211, 252, 0.85);
+    }
+
+    .idle-airport-sep {
+      opacity: 0.38;
+    }
+
+    .idle-airport-city {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 500;
+      font-size: 0.75rem;
+      color: rgba(203, 213, 225, 0.65);
+    }
+
     /* --- MENU DÉROULANT AÉROPORT SUR MESURE --- */
     .airport-dropdown {
       position: relative;
@@ -1177,11 +1222,23 @@
         background: transparent;
       }
 
-      /* Bandeau rétracté : Horloge verte fixe en haut à gauche, Tour de contrôle fixe en haut à droite */
+      /* Bandeau rétracté : Horloge verte à gauche, repère subtil aéroport à côté, Tour de contrôle à droite */
       body.idle-mode .live-clock {
         position: fixed;
         top: calc(0.65rem + env(safe-area-inset-top));
         left: calc(1rem + env(safe-area-inset-left));
+      }
+
+      .idle-airport-badge {
+        top: calc(0.65rem + env(safe-area-inset-top));
+        left: calc(6.25rem + env(safe-area-inset-left));
+        padding: 0.42rem 0.6rem;
+        font-size: 0.68rem;
+      }
+
+      .idle-airport-sep,
+      .idle-airport-city {
+        display: none;
       }
 
       body.idle-mode .traffic-pill {
@@ -1511,6 +1568,13 @@
     <div class="atc-list" id="atc-list"></div>
   </aside>
 
+  <!-- REPÈRE DISCRET DE LA ZONE QUAND LE BANDEAU EST RÉTRACTÉ -->
+  <div class="idle-airport-badge" id="idle-airport-badge" aria-hidden="true">
+    <span class="idle-airport-iata" id="idle-iata">TLS</span>
+    <span class="idle-airport-sep">•</span>
+    <span class="idle-airport-city" id="idle-city">Toulouse-Blagnac</span>
+  </div>
+
   <header class="top-bar">
     <div class="top-left">
       <div class="airport-dropdown fadeable-ui" id="airport-dropdown">
@@ -1626,7 +1690,7 @@
           <line x1="3" y1="12" x2="3.01" y2="12"></line>
           <line x1="3" y1="18" x2="3.01" y2="18"></line>
         </svg>
-        <span id="traffic-count">0 avion en zone</span>
+        <span id="traffic-count">0 en vol • 0 au sol</span>
       </button>
     </div>
   </header>
@@ -1736,13 +1800,10 @@
       const spd = Number(vol.vitesse_kts || 0);
       const phase = (vol.phase || "").toUpperCase();
 
-      // Si le transpondeur indique explicitement au sol et vitesse quasi nulle
       if ((phase.includes("SOL") || phase.includes("PARQ") || phase.includes("GROUND")) && spd < 30) {
         return false;
       }
 
-      // Un avion en vol (même très haute altitude) a toujours une altitude >= 1400 ft OU une vitesse >= 30 kts
-      // Un avion parké sur les pistes d'essais (ex: Airbus TLS à ~500-900 ft baro) a toujours spd < 30 kts et alt < 1400 ft
       if (alt >= 1400 || spd >= 30) {
         return true;
       }
@@ -1826,7 +1887,6 @@
       for (const item of listeAvions) {
         const av = item.vol;
         if (!av || !av.badge_rare || !av.hex) continue;
-        // Ne notifie que si l'avion rare est réellement en vol / en mouvement
         if (!estAppareilEnVolOuMouvement(av)) continue;
 
         const cleUniq = `${zoneId}_${av.hex}`;
@@ -2117,6 +2177,8 @@
         if (actif) {
           document.getElementById("trigger-iata").textContent = id;
           document.getElementById("trigger-name").textContent = opt.dataset.city;
+          document.getElementById("idle-iata").textContent = id;
+          document.getElementById("idle-city").textContent = opt.dataset.city;
         }
       });
     }
@@ -2381,13 +2443,9 @@
 
       verifierAvionsRaresEnZone(listeEnVol, zoneId);
 
-      // Affiche en priorité le compteur d'avions en vol dans le bouton Tour de contrôle
-      const trafficLabel = listeEnVol.length > 0
-        ? `${listeEnVol.length} en vol${listeAuSol.length > 0 ? " • +" + listeAuSol.length + " sol" : ""}`
-        : `${listeAuSol.length} au sol`;
-      document.getElementById("traffic-count").textContent = trafficLabel;
+      // Bouton Tour de contrôle : toujours au format "XX en vol • XX au sol"
+      document.getElementById("traffic-count").textContent = `${listeEnVol.length} en vol • ${listeAuSol.length} au sol`;
 
-      // Si l'utilisateur avait verrouillé un avion qui a disparu, on déverrouille
       if (hexVerrouille) {
         const existeEncore = listeTriee.some(i => i.vol && i.vol.hex === hexVerrouille);
         if (!existeEncore && listeTriee.length > 0) {
@@ -2396,10 +2454,6 @@
         }
       }
 
-      // Choix de l'avion affiché :
-      // 1. Verrouillage manuel de l'utilisateur
-      // 2. Sinon l'avion EN VOL / EN APPROCHE / EN DÉCOLLAGE / EN ALTITUDE le plus proche
-      // 3. En tout dernier recours uniquement (0 avion en l'air), un avion parké au sol
       let itemCible = null;
       if (hexVerrouille) {
         itemCible = listeTriee.find(i => i.vol && i.vol.hex === hexVerrouille) || null;
@@ -2416,8 +2470,6 @@
         }
       }
 
-      // Si le serveur a renvoyé un avion parké en vedette alors qu'on a sélectionné un avion en vol,
-      // on relance immédiatement un fetch ciblant l'avion en vol pour récupérer sa vraie photo HD !
       if (itemCible && itemCible.vol && data.vol && data.vol.hex !== itemCible.vol.hex) {
         const hexVoulu = itemCible.vol.hex;
         if (window._dernierFetchPhotoHex !== hexVoulu) {
